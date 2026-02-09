@@ -221,8 +221,13 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
         time.sleep(_cfg["poll_interval"])
 
     check_interrupt()
-    t_out.join()
-    t_err.join()
+    t_out.join(timeout=5)
+    t_err.join(timeout=5)
+    if t_out.is_alive() or t_err.is_alive():
+        proc.stdout.close()
+        proc.stderr.close()
+        t_out.join(timeout=2)
+        t_err.join(timeout=2)
     _current_proc = None
 
     stdout = stdout_chunks[0] if stdout_chunks else ""
@@ -320,10 +325,20 @@ class TaskOrchestrator:
         with self.config.log_file.open("a") as f:
             f.write(text + "\n")
 
+    def _format_pass(self) -> None:
+        self._output("  Running formatter...")
+        check_interrupt()
+        result = self.runner.invoke("Run the code formatter.")
+        self._output(f"\n{result.output}\n")
+        if result.succeeded:
+            commit_changes("format")
+
     def run_all(self) -> list[TaskResult]:
         self.config.log_file.parent.mkdir(parents=True, exist_ok=True)
         self.config.log_file.write_text("# Iteration Log\n\n")
         overall_start = time.monotonic()
+
+        self._format_pass()
 
         for task in self.tasks:
             check_interrupt()

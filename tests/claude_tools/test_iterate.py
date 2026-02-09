@@ -67,7 +67,7 @@ class TestRunConfig:
         assert c.max_iterations == 10
         assert c.cooldown_seconds == 30
         assert c.default_wait_seconds == 300
-        assert c.rate_limit_padding_seconds == 30
+        assert c.rate_limit_padding_seconds == 60
         assert c.log_file == Path.cwd() / "logs" / "iterate_log.md"
         assert "NO_CHANGES" in c.suffix
         assert c.continuation_prompt == "Keep going with the same task."
@@ -283,20 +283,28 @@ class TestParseRateLimitWait:
 
     def test_minutes_pattern(self):
         wait = self.runner._parse_rate_limit_wait("Please wait 5 minutes")
-        assert wait == 5 * 60 + 30
+        assert wait == 5 * 60 + 60
 
     def test_minute_singular(self):
         wait = self.runner._parse_rate_limit_wait("Wait 1 minute")
-        assert wait == 1 * 60 + 30
+        assert wait == 1 * 60 + 60
 
-    def test_time_pattern_future(self):
-        future = datetime.now() + timedelta(minutes=10)
+    @patch("claude_tools.iterate.datetime")
+    def test_time_pattern_future(self, mock_dt):
+        fixed_now = datetime(2025, 6, 15, 14, 30, 0)
+        mock_dt.now.return_value = fixed_now
+        mock_dt.strptime = datetime.strptime
+        future = fixed_now + timedelta(minutes=10)
         time_str = future.strftime("%I:%M %p")
         wait = self.runner._parse_rate_limit_wait(f"Resets at {time_str}")
         assert 8 * 60 <= wait <= 12 * 60
 
-    def test_time_pattern_past_falls_through_to_default(self):
-        past = datetime.now() - timedelta(minutes=5)
+    @patch("claude_tools.iterate.datetime")
+    def test_time_pattern_past_falls_through_to_default(self, mock_dt):
+        fixed_now = datetime(2025, 6, 15, 14, 30, 0)
+        mock_dt.now.return_value = fixed_now
+        mock_dt.strptime = datetime.strptime
+        past = fixed_now - timedelta(minutes=5)
         time_str = past.strftime("%I:%M %p")
         wait = self.runner._parse_rate_limit_wait(f"Resets at {time_str}")
         assert wait == 900
@@ -312,7 +320,7 @@ class TestParseRateLimitWait:
 
     def test_zero_minutes(self):
         wait = self.runner._parse_rate_limit_wait("Wait 0 minutes")
-        assert wait == 0 * 60 + 30
+        assert wait == 0 * 60 + 60
 
 
 class TestClaudeRunnerInvoke:
