@@ -209,14 +209,11 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
     stdout_chunks: list[str] = []
     stderr_chunks: list[str] = []
 
-    def _read(stream, dest):
-        dest.append(stream.read())
-
     t_out = threading.Thread(
-        target=_read, args=(proc.stdout, stdout_chunks), daemon=True
+        target=lambda: stdout_chunks.append(proc.stdout.read()), daemon=True
     )
     t_err = threading.Thread(
-        target=_read, args=(proc.stderr, stderr_chunks), daemon=True
+        target=lambda: stderr_chunks.append(proc.stderr.read()), daemon=True
     )
     t_out.start()
     t_err.start()

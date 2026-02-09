@@ -180,10 +180,11 @@ class TestCreateFiles:
         os.makedirs(project_dir)
         create_files(project_dir, "proj")
 
-        files = []
-        for root, dirs, filenames in os.walk(project_dir):
-            for fn in filenames:
-                files.append(os.path.join(root, fn))
+        files = [
+            os.path.join(root, fn)
+            for root, _, filenames in os.walk(project_dir)
+            for fn in filenames
+        ]
         assert len(files) == 9
 
 

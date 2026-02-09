@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from claude_tools.iterate import (
+    DEFAULT_TASKS,
     ClaudeResult,
     ClaudeRunner,
     RunConfig,
@@ -21,6 +22,7 @@ from claude_tools.iterate import (
     discard_changes,
     git,
     git_head_sha,
+    main,
     parse_args,
     run_subprocess,
     squash_task_commits,
@@ -649,8 +651,6 @@ class TestMainFunction:
         ]
         mock_orch_cls.return_value = mock_orch
 
-        from claude_tools.iterate import main
-
         main()
 
         tasks_arg = mock_orch_cls.call_args[0][0]
@@ -670,8 +670,6 @@ class TestMainFunction:
         mock_orch.run_all.return_value = [TaskResult("T", TaskStatus.CONVERGED, 1, 1.0)]
         mock_orch_cls.return_value = mock_orch
 
-        from claude_tools.iterate import DEFAULT_TASKS, main
-
         main()
 
         tasks_arg = mock_orch_cls.call_args[0][0]
@@ -686,8 +684,6 @@ class TestMainFunction:
         mock_orch = MagicMock()
         mock_orch.run_all.return_value = [TaskResult("T", TaskStatus.FAILED, 1, 1.0)]
         mock_orch_cls.return_value = mock_orch
-
-        from claude_tools.iterate import main
 
         with pytest.raises(SystemExit) as exc_info:
             main()
@@ -706,20 +702,14 @@ class TestMainFunction:
         ]
         mock_orch_cls.return_value = mock_orch
 
-        from claude_tools.iterate import main
-
         main()  # should not raise
 
 
 class TestDefaultTasks:
     def test_default_tasks_count(self):
-        from claude_tools.iterate import DEFAULT_TASKS
-
         assert len(DEFAULT_TASKS) == 6
 
     def test_default_tasks_names(self):
-        from claude_tools.iterate import DEFAULT_TASKS
-
         names = [t.name for t in DEFAULT_TASKS]
         assert names == [
             "Bug fixes",
@@ -731,8 +721,6 @@ class TestDefaultTasks:
         ]
 
     def test_all_tasks_have_nonempty_prompts(self):
-        from claude_tools.iterate import DEFAULT_TASKS
-
         for t in DEFAULT_TASKS:
             assert len(t.prompt) > 0
 
