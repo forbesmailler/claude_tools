@@ -120,47 +120,53 @@ class RunConfig:
 DEFAULT_TASKS = [
     Task(
         "Bug fixes",
-        "Search every source file in the repo for bugs. Look for: off-by-one errors, "
-        "race conditions, resource leaks, incorrect boundary checks, and silent data "
-        "truncation. For each bug, make the smallest fix that corrects the issue.",
+        "Search every source file for bugs: off-by-one errors, logic errors, edge cases, "
+        "race conditions, resource leaks, incorrect boundary checks, silent data "
+        "truncation, and swallowed exceptions. Do not rely on bounds or clamping to mask "
+        "bugs; extreme values indicate bugs to fix. Make the smallest fix that corrects "
+        "each issue.",
     ),
     Task(
         "Test coverage",
-        "Find functions and branches that have no tests or weak tests. Write focused "
-        "unit tests that cover: error handling paths, boundary values (zero, empty, max, "
-        "negative), off-by-one boundaries, and uncommon but valid inputs. Each assertion "
-        "should check an exact expected value, not just truthiness. When testing "
-        "collections, also assert the count.",
+        "Run the test suite with coverage to find uncovered functions and branches. "
+        "Target 90%+ line coverage. Write focused unit tests following the layout "
+        "tests/foo/test_bar.py matching foo/bar.py. Assert exact expected values, not "
+        "just truthiness or types. When checking subsets, also assert the total count. "
+        "Cover: error handling paths, boundary values (zero, empty, max, negative), "
+        "off-by-one boundaries, and uncommon but valid inputs.",
     ),
     Task(
         "Conciseness",
         "Make the codebase more concise without changing behavior. Remove dead code, "
-        "unused imports, unreachable branches, and commented-out code. Inline functions "
-        "that are called only once and add no clarity. Replace deeply nested if/else "
-        "chains with early returns or guard clauses. Merge duplicate logic into shared "
-        "helpers only when there are 3+ copies.",
+        "unused imports, unreachable branches, commented-out code, and deprecated APIs. "
+        "Inline trivial functions that are called once and add no clarity. Replace deep "
+        "nesting with early returns or guard clauses. Prefer f-strings, context managers, "
+        "dataclasses, and walrus operator where they simplify. Only extract shared helpers "
+        "when there are 3+ duplications.",
     ),
     Task(
         "Optimization",
-        "Find performance bottlenecks in the codebase. Look for: O(n^2) or worse "
-        "algorithms that could be O(n log n) or O(n), repeated lookups that should be "
-        "cached, unnecessary copies of large objects, allocations inside tight loops, and "
-        "redundant recomputation. Apply targeted fixes. Do not sacrifice readability for "
-        "marginal gains.",
+        "Find performance bottlenecks: O(n^2)+ algorithms that could be O(n log n) or "
+        "O(n), repeated lookups that should be cached, unnecessary copies of large "
+        "objects, allocations inside tight loops, and redundant recomputation. For "
+        "I/O-bound thread pools, set max_workers=os.cpu_count(). Apply targeted fixes. "
+        "Do not sacrifice readability for marginal gains.",
     ),
     Task(
         "Config",
-        "Find hardcoded numeric constants, string literals, URLs, timeouts, thresholds, "
-        "and tuning parameters scattered across source files. Move each to an appropriate "
-        "yaml config file. If a config loading mechanism already exists, use it. If moved "
-        "values are needed at compile time, update any config generation scripts accordingly.",
+        "Find hardcoded numeric constants, magic numbers, string literals, URLs, "
+        "timeouts, thresholds, and tuning parameters in source files. Move each to a "
+        "YAML config file (not JSON/TOML/INI). If a config loading mechanism already "
+        "exists, use it; otherwise create one. Replace the hardcoded values with reads "
+        "from the config.",
     ),
     Task(
         "Markdown",
         "Review every markdown file in the repo (README.md, CLAUDE.md, etc.). Fix "
-        "factual inaccuracies, remove stale or duplicated sections, and ensure docs "
-        "reflect the current code. Keep wording concise. Fix broken links, inconsistent "
-        "formatting, and incorrect command examples. Do not add new sections or boilerplate.",
+        "factual inaccuracies, stale sections, and incorrect command examples so they "
+        "reflect the current code. Fix broken links and inconsistent formatting. Remove "
+        "duplication between files. Keep wording concise. Do not add new sections or "
+        "boilerplate.",
     ),
 ]
 
