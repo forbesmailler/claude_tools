@@ -319,8 +319,9 @@ class ClaudeRunner:
                     f"  Rate limit hit. Waiting {wait / 60:.1f} min (until ~{resume_at})...",
                     flush=True,
                 )
-                time.sleep(wait)
-                check_interrupt()
+                for _ in range(wait):
+                    check_interrupt()
+                    time.sleep(1)
                 print("  Resuming...", flush=True)
                 continue
 
