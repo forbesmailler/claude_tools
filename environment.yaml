@@ -1,0 +1,9 @@
+name: claude_tools
+channels:
+  - conda-forge
+dependencies:
+  - python
+  - invoke
+  - ruff
+  - pytest
+  - pytest-cov
