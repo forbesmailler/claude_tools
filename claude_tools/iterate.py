@@ -15,16 +15,71 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import atexit
+import ctypes
 import json
+import msvcrt
 import re
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Optional
+
+# ---------------------------------------------------------------------------
+# Ctrl+C handling for Windows/PowerShell
+#
+# Disable ENABLE_PROCESSED_INPUT on the console so Ctrl+C is placed in the
+# input buffer as character 0x03 instead of generating a CTRL_C_EVENT.  A
+# daemon thread polls msvcrt.kbhit()/getwch() for that character and sets
+# _interrupted.  check_interrupt() is called at every loop boundary.
+# ---------------------------------------------------------------------------
+
+_interrupted = False
+_current_proc: Optional[subprocess.Popen] = None
+
+_kernel32 = ctypes.windll.kernel32
+_stdin_handle = _kernel32.GetStdHandle(ctypes.c_ulong(-10 & 0xFFFFFFFF))
+_original_mode = ctypes.c_ulong()
+_kernel32.GetConsoleMode(_stdin_handle, ctypes.byref(_original_mode))
+_kernel32.SetConsoleMode(_stdin_handle, _original_mode.value & ~0x0001)
+
+
+def _restore_console():
+    _kernel32.SetConsoleMode(_stdin_handle, _original_mode.value)
+
+
+atexit.register(_restore_console)
+
+
+def _keypress_monitor():
+    global _interrupted
+    while not _interrupted:
+        if msvcrt.kbhit():
+            ch = msvcrt.getwch()
+            if ch == "\x03":
+                _interrupted = True
+                return
+        time.sleep(0.1)
+
+
+threading.Thread(target=_keypress_monitor, daemon=True).start()
+
+
+def check_interrupt():
+    global _current_proc
+    if _interrupted:
+        if _current_proc and _current_proc.poll() is None:
+            _current_proc.kill()
+            _current_proc.wait()
+            _current_proc = None
+        _restore_console()
+        print("\n  Interrupted by user.", flush=True)
+        sys.exit(130)
 
 
 class TaskStatus(Enum):
@@ -53,7 +108,7 @@ class RunConfig:
     max_iterations: int = 20
     default_wait_seconds: int = 900
     log_file: Path = field(
-        default_factory=lambda: Path(__file__).parent / "iterate_log.md"
+        default_factory=lambda: Path.cwd() / "logs" / "iterate_log.md"
     )
     suffix: str = (
         "After making changes, run all tests and the code formatter. "
@@ -100,6 +155,13 @@ DEFAULT_TASKS = [
         "yaml config file. If a config loading mechanism already exists, use it. If moved "
         "values are needed at compile time, update any config generation scripts accordingly.",
     ),
+    Task(
+        "Markdown",
+        "Review every markdown file in the repo (README.md, CLAUDE.md, etc.). Fix "
+        "factual inaccuracies, remove stale or duplicated sections, and ensure docs "
+        "reflect the current code. Keep wording concise. Fix broken links, inconsistent "
+        "formatting, and incorrect command examples. Do not add new sections or boilerplate.",
+    ),
 ]
 
 
@@ -117,7 +179,7 @@ def git_head_sha() -> str:
 
 
 def commit_changes(message: str) -> bool:
-    git("add", "-A", "--", ".", ":!scripts/iterate_log.md", check=False)
+    git("add", "-A", "--", ".", ":!logs/iterate_log.md", check=False)
     result = git("diff", "--cached", "--quiet", check=False)
     if result.returncode != 0:
         git("commit", "-m", message)
@@ -148,6 +210,45 @@ class ClaudeResult:
     @property
     def signalled_no_changes(self) -> bool:
         return self.succeeded and "NO_CHANGES" in self.output
+
+
+def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
+    """Run a subprocess while remaining responsive to Ctrl+C.
+
+    Uses Popen + daemon reader threads so the main thread polls with
+    short sleeps and can check the _interrupted flag between them.
+    """
+    global _current_proc
+    proc = subprocess.Popen(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    _current_proc = proc
+    stdout_chunks: list[str] = []
+    stderr_chunks: list[str] = []
+
+    def _read(stream, dest):
+        dest.append(stream.read())
+
+    t_out = threading.Thread(target=_read, args=(proc.stdout, stdout_chunks), daemon=True)
+    t_err = threading.Thread(target=_read, args=(proc.stderr, stderr_chunks), daemon=True)
+    t_out.start()
+    t_err.start()
+
+    while proc.poll() is None:
+        check_interrupt()
+        time.sleep(0.5)
+
+    check_interrupt()
+    t_out.join()
+    t_err.join()
+    _current_proc = None
+
+    stdout = stdout_chunks[0] if stdout_chunks else ""
+    stderr = stderr_chunks[0] if stderr_chunks else ""
+    return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
 
 
 class ClaudeRunner:
@@ -198,19 +299,22 @@ class ClaudeRunner:
         args.append(prompt)
 
         while True:
-            result = subprocess.run(args, capture_output=True, text=True)
+            check_interrupt()
+            result = run_subprocess(args)
+            check_interrupt()
             combined = result.stdout + result.stderr
 
             if self._looks_like_rate_limit(combined):
                 wait = self._parse_rate_limit_wait(combined)
                 resume_at = (datetime.now() + timedelta(seconds=wait)).strftime(
-                    "%-I:%M %p"
+                    "%I:%M %p"
                 )
                 print(
                     f"  Rate limit hit. Waiting {wait / 60:.1f} min (until ~{resume_at})...",
                     flush=True,
                 )
                 time.sleep(wait)
+                check_interrupt()
                 print("  Resuming...", flush=True)
                 continue
 
@@ -233,11 +337,18 @@ class TaskOrchestrator:
         self.runner = ClaudeRunner(config)
         self.results: list[TaskResult] = []
 
+    def _output(self, text: str) -> None:
+        print(text)
+        with self.config.log_file.open("a") as f:
+            f.write(text + "\n")
+
     def run_all(self) -> list[TaskResult]:
+        self.config.log_file.parent.mkdir(parents=True, exist_ok=True)
         self.config.log_file.write_text("# Iteration Log\n\n")
         overall_start = time.monotonic()
 
         for task in self.tasks:
+            check_interrupt()
             result = self._run_task(task)
             self.results.append(result)
 
@@ -246,9 +357,9 @@ class TaskOrchestrator:
         return self.results
 
     def _run_task(self, task: Task) -> TaskResult:
-        print(f"\n{'=' * 60}")
-        print(f"  Task: {task.name}")
-        print(f"{'=' * 60}")
+        self._output(f"\n{'=' * 60}")
+        self._output(f"  Task: {task.name}")
+        self._output(f"{'=' * 60}")
 
         task_start = time.monotonic()
         base_sha = git_head_sha()
@@ -256,8 +367,9 @@ class TaskOrchestrator:
         iterations = 0
 
         for iteration in range(1, self.config.max_iterations + 1):
+            check_interrupt()
             iterations = iteration
-            print(f"\n  --- {task.name} · iteration {iteration} ---")
+            self._output(f"\n  --- {task.name} - iteration {iteration} ---")
 
             if iteration == 1:
                 prompt = f"{task.prompt} {self.config.suffix}"
@@ -266,13 +378,11 @@ class TaskOrchestrator:
                 prompt = f"Keep going with the same task. {self.config.suffix}"
                 result = self.runner.invoke(prompt, continue_session=True)
 
-            preview = result.output[:500] + ("..." if len(result.output) > 500 else "")
-            print(f"  {preview}\n")
+            self._output(f"\n{result.output}\n")
 
             if not result.succeeded:
-                print(f"  FAIL: Claude exited with code {result.exit_code}")
-                self._log(
-                    f"## Failed: {task.name} (iteration {iteration}, exit code {result.exit_code})\n"
+                self._output(
+                    f"  FAIL: Claude exited with code {result.exit_code}"
                 )
                 status = TaskStatus.FAILED
                 discard_changes()
@@ -280,33 +390,24 @@ class TaskOrchestrator:
 
             if result.signalled_no_changes:
                 elapsed = (time.monotonic() - task_start) / 60
-                print(f"  Converged after {iteration} iteration(s) ({elapsed:.1f}m)")
-                self._log(
-                    f"## Completed: {task.name} in {iteration} iteration(s) ({elapsed:.1f}m)\n"
+                self._output(
+                    f"  Converged after {iteration} iteration(s) ({elapsed:.1f}m)"
                 )
                 status = TaskStatus.CONVERGED
                 commit_changes(f"{task.name} - iteration {iteration}")
                 break
 
             commit_changes(f"{task.name} - iteration {iteration}")
-            self._log(f"### {task.name} - iteration {iteration}\n")
 
         if status == TaskStatus.MAX_ITERATIONS:
-            print(
+            self._output(
                 f"  Hit max iterations ({self.config.max_iterations}) for: {task.name}"
-            )
-            self._log(
-                f"## Max iterations: {task.name} after {self.config.max_iterations} iterations\n"
             )
 
         squash_task_commits(base_sha, f"{task.name} - automated iteration")
 
         elapsed = (time.monotonic() - task_start) / 60
         return TaskResult(task.name, status, iterations, elapsed)
-
-    def _log(self, text: str) -> None:
-        with self.config.log_file.open("a") as f:
-            f.write(text)
 
     def _print_summary(self, elapsed_minutes: float) -> None:
         colors = {
@@ -316,15 +417,21 @@ class TaskOrchestrator:
         }
         reset = "\033[0m"
 
-        print(f"\n{'=' * 60}")
-        print(f"  Summary ({elapsed_minutes:.1f}m)")
-        print(f"{'=' * 60}")
+        self._output(f"\n{'=' * 60}")
+        self._output(f"  Summary ({elapsed_minutes:.1f}m)")
+        self._output(f"{'=' * 60}")
         for r in self.results:
             c = colors.get(r.status, "")
             print(
-                f"  {c}{r.status.value:<15}{reset} {r.name} ({r.iterations} iter, {r.elapsed_minutes:.1f}m)"
+                f"  {c}{r.status.value:<15}{reset} {r.name} "
+                f"({r.iterations} iter, {r.elapsed_minutes:.1f}m)"
             )
-        print()
+            with self.config.log_file.open("a") as f:
+                f.write(
+                    f"  {r.status.value:<15} {r.name} "
+                    f"({r.iterations} iter, {r.elapsed_minutes:.1f}m)\n"
+                )
+        self._output("")
 
 
 def parse_args() -> argparse.Namespace:
