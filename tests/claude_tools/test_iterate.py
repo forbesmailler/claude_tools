@@ -16,7 +16,6 @@ from claude_tools.iterate import (
     TaskOrchestrator,
     TaskResult,
     TaskStatus,
-    _restore_console,
     check_interrupt,
     commit_changes,
     discard_changes,
@@ -64,7 +63,7 @@ class TestRunConfig:
         c = RunConfig()
         assert c.model is None
         assert c.max_iterations == 20
-        assert c.default_wait_seconds == 900
+        assert c.default_wait_seconds == 60
         assert c.log_file == Path.cwd() / "logs" / "iterate_log.md"
         assert "NO_CHANGES" in c.suffix
 
@@ -642,7 +641,7 @@ class TestMainFunction:
     @patch("claude_tools.iterate.parse_args")
     def test_main_with_custom_prompts(self, mock_args, mock_orch_cls):
         mock_args.return_value = MagicMock(
-            model="opus", prompts=["p1", "p2"], max_iterations=5
+            model="opus", prompts=["p1", "p2"], max_iterations=5, cooldown=5
         )
         mock_orch = MagicMock()
         mock_orch.run_all.return_value = [
@@ -664,7 +663,9 @@ class TestMainFunction:
     @patch("claude_tools.iterate.TaskOrchestrator")
     @patch("claude_tools.iterate.parse_args")
     def test_main_with_default_tasks(self, mock_args, mock_orch_cls):
-        mock_args.return_value = MagicMock(model=None, prompts=None, max_iterations=20)
+        mock_args.return_value = MagicMock(
+            model=None, prompts=None, max_iterations=20, cooldown=5
+        )
         mock_orch = MagicMock()
         mock_orch.run_all.return_value = [TaskResult("T", TaskStatus.CONVERGED, 1, 1.0)]
         mock_orch_cls.return_value = mock_orch
@@ -679,7 +680,9 @@ class TestMainFunction:
     @patch("claude_tools.iterate.TaskOrchestrator")
     @patch("claude_tools.iterate.parse_args")
     def test_main_exits_on_failure(self, mock_args, mock_orch_cls):
-        mock_args.return_value = MagicMock(model=None, prompts=None, max_iterations=20)
+        mock_args.return_value = MagicMock(
+            model=None, prompts=None, max_iterations=20, cooldown=5
+        )
         mock_orch = MagicMock()
         mock_orch.run_all.return_value = [TaskResult("T", TaskStatus.FAILED, 1, 1.0)]
         mock_orch_cls.return_value = mock_orch
@@ -693,7 +696,9 @@ class TestMainFunction:
     @patch("claude_tools.iterate.TaskOrchestrator")
     @patch("claude_tools.iterate.parse_args")
     def test_main_no_exit_on_success(self, mock_args, mock_orch_cls):
-        mock_args.return_value = MagicMock(model=None, prompts=None, max_iterations=20)
+        mock_args.return_value = MagicMock(
+            model=None, prompts=None, max_iterations=20, cooldown=5
+        )
         mock_orch = MagicMock()
         mock_orch.run_all.return_value = [
             TaskResult("T", TaskStatus.CONVERGED, 1, 1.0),
@@ -732,30 +737,20 @@ class TestDefaultTasks:
             assert len(t.prompt) > 0
 
 
-class TestRestoreConsole:
-    @patch("claude_tools.iterate._kernel32")
-    def test_calls_set_console_mode(self, mock_kernel32):
-        _restore_console()
-        mock_kernel32.SetConsoleMode.assert_called_once()
-
-
 class TestCheckInterrupt:
     @patch("claude_tools.iterate._interrupted", False)
     def test_no_op_when_not_interrupted(self):
         check_interrupt()  # should not raise
 
-    @patch("claude_tools.iterate._restore_console")
     @patch("claude_tools.iterate._interrupted", True)
     @patch("claude_tools.iterate._current_proc", None)
-    def test_exits_130_when_interrupted_no_proc(self, mock_restore):
+    def test_exits_130_when_interrupted_no_proc(self):
         with pytest.raises(SystemExit) as exc_info:
             check_interrupt()
         assert exc_info.value.code == 130
-        mock_restore.assert_called_once()
 
-    @patch("claude_tools.iterate._restore_console")
     @patch("claude_tools.iterate._interrupted", True)
-    def test_kills_running_proc(self, mock_restore):
+    def test_kills_running_proc(self):
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None  # still running
         with patch("claude_tools.iterate._current_proc", mock_proc):
@@ -765,9 +760,8 @@ class TestCheckInterrupt:
         mock_proc.kill.assert_called_once()
         mock_proc.wait.assert_called_once()
 
-    @patch("claude_tools.iterate._restore_console")
     @patch("claude_tools.iterate._interrupted", True)
-    def test_skips_kill_if_proc_already_finished(self, mock_restore):
+    def test_skips_kill_if_proc_already_finished(self):
         mock_proc = MagicMock()
         mock_proc.poll.return_value = 0  # already finished
         with patch("claude_tools.iterate._current_proc", mock_proc):
