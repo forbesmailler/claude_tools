@@ -27,6 +27,9 @@ from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 
+from constants import load_config
+
+_cfg = load_config()["iterate"]
 _interrupted = False
 _current_proc: subprocess.Popen | None = None
 
@@ -38,7 +41,7 @@ def _keypress_monitor():
             if msvcrt.getwch() == "q":
                 _interrupted = True
                 return
-        time.sleep(0.1)
+        time.sleep(_cfg["keypress_poll_interval"])
 
 
 threading.Thread(target=_keypress_monitor, daemon=True).start()
@@ -78,18 +81,16 @@ class TaskResult:
 @dataclass
 class RunConfig:
     model: str | None = None
-    max_iterations: int = 10
-    cooldown_seconds: int = 30
-    default_wait_seconds: int = 300
-    log_file: Path = field(
-        default_factory=lambda: Path.cwd() / "logs" / "iterate_log.md"
-    )
-    suffix: str = (
-        "After making changes, run all tests and the code formatter. "
-        "Only make changes you are confident are correct. "
-        "If no changes are needed, respond with exactly NO_CHANGES and nothing else."
-    )
+    max_iterations: int = _cfg["max_iterations"]
+    cooldown_seconds: int = _cfg["cooldown_seconds"]
+    default_wait_seconds: int = _cfg["default_wait_seconds"]
+    rate_limit_padding_seconds: int = _cfg["rate_limit_padding_seconds"]
+    log_file: Path = field(default_factory=lambda: Path.cwd() / _cfg["log_file"])
+    suffix: str = _cfg["suffix"]
+    continuation_prompt: str = _cfg["continuation_prompt"]
 
+
+TASK_KEYS = ["bugs", "tests", "concise", "optimize", "config", "markdown"]
 
 DEFAULT_TASKS = [
     Task(
@@ -156,7 +157,7 @@ def git_head_sha() -> str:
 
 
 def commit_changes(message: str) -> bool:
-    git("add", "-A", "--", ".", ":!logs/iterate_log.md", check=False)
+    git("add", "-A", "--", ".", f":!{_cfg['log_file']}", check=False)
     result = git("diff", "--cached", "--quiet", check=False)
     if result.returncode != 0:
         git("commit", "-m", message)
@@ -217,7 +218,7 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
 
     while proc.poll() is None:
         check_interrupt()
-        time.sleep(0.5)
+        time.sleep(_cfg["subprocess_poll_interval"])
 
     check_interrupt()
     t_out.join()
@@ -244,6 +245,7 @@ class ClaudeRunner:
         ]
 
     def _parse_rate_limit_wait(self, text: str) -> int:
+        padding = self.config.rate_limit_padding_seconds
         match = re.search(r"(\d{1,2}:\d{2}\s*(?:AM|PM))", text, re.IGNORECASE)
         if match:
             try:
@@ -252,14 +254,16 @@ class ClaudeRunner:
                     month=datetime.now().month,
                     day=datetime.now().day,
                 )
-                wait = int((reset_time - datetime.now()).total_seconds()) + 30
+                wait = int((reset_time - datetime.now()).total_seconds()) + padding
                 if wait > 0:
                     return min(wait, self.config.default_wait_seconds)
             except ValueError:
                 pass
         match = re.search(r"(\d+)\s*minutes?", text)
         if match:
-            return min(int(match.group(1)) * 60 + 30, self.config.default_wait_seconds)
+            return min(
+                int(match.group(1)) * 60 + padding, self.config.default_wait_seconds
+            )
         return self.config.default_wait_seconds
 
     _RATE_LIMIT_RE = re.compile(
@@ -352,7 +356,7 @@ class TaskOrchestrator:
             self._output(f"\n  --- {task.name} - iteration {iteration} ---")
 
             base_prompt = (
-                task.prompt if iteration == 1 else "Keep going with the same task."
+                task.prompt if iteration == 1 else self.config.continuation_prompt
             )
             result = self.runner.invoke(
                 f"{base_prompt} {self.config.suffix}",
@@ -429,14 +433,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-iterations",
         type=int,
-        default=10,
-        help="Max iterations per task (default: 10)",
+        default=_cfg["max_iterations"],
+        help=f"Max iterations per task (default: {_cfg['max_iterations']})",
     )
     parser.add_argument(
         "--cooldown",
         type=int,
-        default=30,
-        help="Seconds to wait between iterations to avoid rate limits (default: 30)",
+        default=_cfg["cooldown_seconds"],
+        help=f"Seconds to wait between iterations (default: {_cfg['cooldown_seconds']})",
+    )
+    parser.add_argument(
+        "--task",
+        "-t",
+        action="append",
+        dest="tasks",
+        choices=TASK_KEYS,
+        help=f"Run only these default tasks (choices: {', '.join(TASK_KEYS)}). Repeatable.",
     )
     return parser.parse_args()
 
@@ -452,6 +464,9 @@ def main() -> None:
 
     if args.prompts:
         tasks = [Task(f"Task {i + 1}", p) for i, p in enumerate(args.prompts)]
+    elif args.tasks:
+        task_map = dict(zip(TASK_KEYS, DEFAULT_TASKS))
+        tasks = [task_map[k] for k in args.tasks]
     else:
         tasks = DEFAULT_TASKS
 

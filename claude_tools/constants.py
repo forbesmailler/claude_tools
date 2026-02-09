@@ -1,12 +1,29 @@
 """Constants and file templates for project setup."""
 
 from datetime import datetime
+from pathlib import Path
+
+import yaml
+
+_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 
 
-REPOS_DIR = r"C:\Users\forbe\repos"
-MAMBA_ACTIVATE = r"C:\Users\forbe\miniforge3\Scripts\activate.bat"
-MAMBA_BAT = r"C:\Users\forbe\.local\share\mamba\condabin\mamba.bat"
-GH_OWNER = "forbesmailler"
+def load_config(path: Path = _CONFIG_PATH) -> dict:
+    with open(path) as f:
+        return yaml.safe_load(f)
+
+
+_cfg = load_config()
+
+REPOS_DIR = _cfg["paths"]["repos_dir"]
+MAMBA_ACTIVATE = _cfg["paths"]["mamba_activate"]
+MAMBA_BAT = _cfg["paths"]["mamba_bat"]
+GH_OWNER = _cfg["github"]["owner"]
+GH_ENV_NAME = _cfg["setup"]["gh_env_name"]
+REPO_VISIBILITY = _cfg["setup"]["repo_visibility"]
+CONDA_CHANNEL = _cfg["setup"]["conda_channel"]
+DEFAULT_DEPS = _cfg["setup"]["default_deps"]
+LINE_LENGTH = _cfg["setup"]["line_length"]
 YEAR = datetime.now().year
 
 GITIGNORE = """\

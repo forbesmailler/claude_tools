@@ -65,15 +65,24 @@ class TestRunConfig:
         c = RunConfig()
         assert c.model is None
         assert c.max_iterations == 10
+        assert c.cooldown_seconds == 30
         assert c.default_wait_seconds == 300
+        assert c.rate_limit_padding_seconds == 30
         assert c.log_file == Path.cwd() / "logs" / "iterate_log.md"
         assert "NO_CHANGES" in c.suffix
+        assert c.continuation_prompt == "Keep going with the same task."
 
     def test_custom(self):
-        c = RunConfig(model="opus", max_iterations=5, default_wait_seconds=60)
+        c = RunConfig(
+            model="opus",
+            max_iterations=5,
+            default_wait_seconds=60,
+            rate_limit_padding_seconds=10,
+        )
         assert c.model == "opus"
         assert c.max_iterations == 5
         assert c.default_wait_seconds == 60
+        assert c.rate_limit_padding_seconds == 10
 
 
 class TestClaudeResult:
@@ -286,11 +295,11 @@ class TestParseRateLimitWait:
         wait = self.runner._parse_rate_limit_wait(f"Resets at {time_str}")
         assert 8 * 60 <= wait <= 12 * 60
 
-    def test_time_pattern_past_wraps_to_next_day(self):
+    def test_time_pattern_past_falls_through_to_default(self):
         past = datetime.now() - timedelta(minutes=5)
         time_str = past.strftime("%I:%M %p")
         wait = self.runner._parse_rate_limit_wait(f"Resets at {time_str}")
-        assert wait > 23 * 3600
+        assert wait == 900
 
     def test_no_pattern_returns_default(self):
         wait = self.runner._parse_rate_limit_wait("Rate limited, try later")
@@ -662,7 +671,7 @@ class TestMainFunction:
     @patch("claude_tools.iterate.parse_args")
     def test_main_with_default_tasks(self, mock_args, mock_orch_cls):
         mock_args.return_value = MagicMock(
-            model=None, prompts=None, max_iterations=20, cooldown=5
+            model=None, prompts=None, tasks=None, max_iterations=20, cooldown=5
         )
         mock_orch = MagicMock()
         mock_orch.run_all.return_value = [TaskResult("T", TaskStatus.CONVERGED, 1, 1.0)]
@@ -677,7 +686,7 @@ class TestMainFunction:
     @patch("claude_tools.iterate.parse_args")
     def test_main_exits_on_failure(self, mock_args, mock_orch_cls):
         mock_args.return_value = MagicMock(
-            model=None, prompts=None, max_iterations=20, cooldown=5
+            model=None, prompts=None, tasks=None, max_iterations=20, cooldown=5
         )
         mock_orch = MagicMock()
         mock_orch.run_all.return_value = [TaskResult("T", TaskStatus.FAILED, 1, 1.0)]
@@ -691,7 +700,7 @@ class TestMainFunction:
     @patch("claude_tools.iterate.parse_args")
     def test_main_no_exit_on_success(self, mock_args, mock_orch_cls):
         mock_args.return_value = MagicMock(
-            model=None, prompts=None, max_iterations=20, cooldown=5
+            model=None, prompts=None, tasks=None, max_iterations=20, cooldown=5
         )
         mock_orch = MagicMock()
         mock_orch.run_all.return_value = [

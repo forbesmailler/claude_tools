@@ -204,6 +204,10 @@ class TestInitGit:
 
 class TestCreateMambaEnv:
     @patch("claude_tools.setup.mamba_run")
+    @patch(
+        "claude_tools.setup.DEFAULT_DEPS",
+        ["python", "invoke", "ruff", "pytest", "pytest-cov"],
+    )
     def test_calls_mamba_create_and_export(self, mock_mamba):
         create_mamba_env("/fake/dir", "testproj")
         assert mock_mamba.call_count == 2
@@ -218,6 +222,8 @@ class TestCreateMambaEnv:
 
 class TestCreateGithubRepo:
     @patch("claude_tools.setup.subprocess.run")
+    @patch("claude_tools.setup.REPO_VISIBILITY", "private")
+    @patch("claude_tools.setup.GH_ENV_NAME", "setup")
     @patch("claude_tools.setup.MAMBA_BAT", r"C:\mamba.bat")
     def test_calls_gh_repo_create(self, mock_run):
         create_github_repo("/fake/dir", "myrepo")

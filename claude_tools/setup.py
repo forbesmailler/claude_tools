@@ -6,11 +6,16 @@ import sys
 
 from constants import (
     CLAUDE_SETTINGS,
+    CONDA_CHANNEL,
+    DEFAULT_DEPS,
+    GH_ENV_NAME,
     GH_OWNER,
     GITIGNORE,
     LICENSE_TEMPLATE,
+    LINE_LENGTH,
     MAMBA_ACTIVATE,
     MAMBA_BAT,
+    REPO_VISIBILITY,
     REPOS_DIR,
     YEAR,
 )
@@ -46,10 +51,10 @@ def create_files(project_dir, name):
         LICENSE_TEMPLATE.format(year=YEAR, owner=GH_OWNER),
     )
 
+    deps_lines = "".join(f"  - {d}\n" for d in DEFAULT_DEPS)
     write_file(
         os.path.join(project_dir, "environment.yaml"),
-        f"name: {name}\nchannels:\n  - conda-forge\ndependencies:\n"
-        f"  - python\n  - invoke\n  - ruff\n  - pytest\n  - pytest-cov\n",
+        f"name: {name}\nchannels:\n  - {CONDA_CHANNEL}\ndependencies:\n{deps_lines}",
     )
 
     write_file(
@@ -61,8 +66,8 @@ from invoke import task
 @task
 def format(c):
     """Format code with ruff."""
-    c.run("ruff format --line-length 88 .")
-    c.run("ruff check --line-length 88 --fix --unsafe-fixes .")
+    c.run("ruff format --line-length {LINE_LENGTH} .")
+    c.run("ruff check --line-length {LINE_LENGTH} --fix --unsafe-fixes .")
 
 
 @task
@@ -120,7 +125,8 @@ def init_git(project_dir):
 
 
 def create_mamba_env(project_dir, name):
-    mamba_run(f"mamba create -n {name} python invoke ruff pytest pytest-cov -y")
+    deps_str = " ".join(DEFAULT_DEPS)
+    mamba_run(f"mamba create -n {name} {deps_str} -y")
     env_file = os.path.join(project_dir, "environment.yaml")
     mamba_run(f'mamba env export -n {name} --no-builds > "{env_file}"')
 
@@ -131,12 +137,12 @@ def create_github_repo(project_dir, name):
             MAMBA_BAT,
             "run",
             "-n",
-            "setup",
+            GH_ENV_NAME,
             "gh",
             "repo",
             "create",
             name,
-            "--private",
+            f"--{REPO_VISIBILITY}",
             "--source",
             ".",
             "--push",
