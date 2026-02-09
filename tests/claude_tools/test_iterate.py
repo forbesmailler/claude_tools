@@ -10,6 +10,8 @@ import pytest
 
 from claude_tools.iterate import (
     DEFAULT_TASKS,
+    TASK_KEYS,
+    TASK_MAP,
     ClaudeResult,
     ClaudeRunner,
     RunConfig,
@@ -543,9 +545,10 @@ class TestTaskOrchestrator:
         orch = self._make_orchestrator([Task("T1", "Fix bugs")], tmp_path)
         orch.run_all()
 
-        first_call = mock_invoke.call_args_list[0]
-        assert "Fix bugs" in first_call[0][0]
-        assert first_call[1].get("continue_session", False) is False
+        # Index 0 is _format_pass(); index 1 is the first task iteration
+        first_task_call = mock_invoke.call_args_list[1]
+        assert "Fix bugs" in first_task_call[0][0]
+        assert first_task_call[1].get("continue_session", False) is False
 
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.squash_task_commits")
@@ -565,7 +568,8 @@ class TestTaskOrchestrator:
 
         def side_effect(prompt, continue_session=False):
             call_count[0] += 1
-            if call_count[0] >= 2:
+            # First call is _format_pass; task calls start at call_count 2
+            if call_count[0] >= 3:
                 return ClaudeResult(output="NO_CHANGES", exit_code=0)
             return ClaudeResult(output="changes", exit_code=0)
 
@@ -573,9 +577,10 @@ class TestTaskOrchestrator:
         orch = self._make_orchestrator([Task("T1", "Fix bugs")], tmp_path)
         orch.run_all()
 
-        second_call = mock_invoke.call_args_list[1]
-        assert "Keep going" in second_call[0][0]
-        assert second_call[1].get("continue_session") is True
+        # Index 0 is _format_pass(); index 2 is the second task iteration
+        third_call = mock_invoke.call_args_list[2]
+        assert "Keep going" in third_call[0][0]
+        assert third_call[1].get("continue_session") is True
 
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.squash_task_commits")
@@ -738,6 +743,15 @@ class TestDefaultTasks:
     def test_all_tasks_have_nonempty_prompts(self):
         for t in DEFAULT_TASKS:
             assert len(t.prompt) > 0
+
+    def test_task_keys_match_default_tasks_length(self):
+        assert len(TASK_KEYS) == len(DEFAULT_TASKS)
+
+    def test_task_map_keys_match_task_keys(self):
+        assert list(TASK_MAP.keys()) == TASK_KEYS
+
+    def test_task_map_values_match_default_tasks(self):
+        assert list(TASK_MAP.values()) == DEFAULT_TASKS
 
 
 class TestCheckInterrupt:

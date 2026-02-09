@@ -90,8 +90,6 @@ class RunConfig:
     continuation_prompt: str = _cfg["continuation_prompt"]
 
 
-TASK_KEYS = ["bugs", "tests", "concise", "optimize", "config", "markdown"]
-
 DEFAULT_TASKS = [
     Task(
         "Bug fixes",
@@ -141,6 +139,9 @@ DEFAULT_TASKS = [
         "duplication between files. Keep wording concise. Do not add new sections.",
     ),
 ]
+
+TASK_KEYS = ["bugs", "tests", "concise", "optimize", "config", "markdown"]
+TASK_MAP = dict(zip(TASK_KEYS, DEFAULT_TASKS, strict=True))
 
 
 def git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
@@ -254,12 +255,11 @@ class ClaudeRunner:
         match = re.search(r"(\d{1,2}:\d{2}\s*(?:AM|PM))", text, re.IGNORECASE)
         if match:
             try:
+                now = datetime.now()
                 reset_time = datetime.strptime(match.group(1), "%I:%M %p").replace(
-                    year=datetime.now().year,
-                    month=datetime.now().month,
-                    day=datetime.now().day,
+                    year=now.year, month=now.month, day=now.day
                 )
-                wait = int((reset_time - datetime.now()).total_seconds()) + padding
+                wait = int((reset_time - now).total_seconds()) + padding
                 if wait > 0:
                     return wait
             except ValueError:
@@ -478,8 +478,7 @@ def main() -> None:
     if args.prompts:
         tasks = [Task(f"Task {i + 1}", p) for i, p in enumerate(args.prompts)]
     elif args.tasks:
-        task_map = dict(zip(TASK_KEYS, DEFAULT_TASKS))
-        tasks = [task_map[k] for k in args.tasks]
+        tasks = [TASK_MAP[k] for k in args.tasks]
     else:
         tasks = DEFAULT_TASKS
 
