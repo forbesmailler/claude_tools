@@ -232,7 +232,6 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
 class ClaudeRunner:
     def __init__(self, config: RunConfig):
         self.config = config
-        self._last_session_id: str | None = None
 
     def _base_args(self) -> list[str]:
         return [
@@ -301,8 +300,6 @@ class ClaudeRunner:
             try:
                 data = json.loads(result.stdout)
                 output_text = data.get("result", result.stdout)
-                if session_id := data.get("session_id"):
-                    self._last_session_id = session_id
             except (json.JSONDecodeError, TypeError):
                 output_text = result.stdout or result.stderr
 

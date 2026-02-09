@@ -6,7 +6,6 @@ from datetime import datetime
 REPOS_DIR = r"C:\Users\forbe\repos"
 MAMBA_ACTIVATE = r"C:\Users\forbe\miniforge3\Scripts\activate.bat"
 MAMBA_BAT = r"C:\Users\forbe\.local\share\mamba\condabin\mamba.bat"
-MAMBA_ENVS = r"C:\Users\forbe\.local\share\mamba\envs"
 GH_OWNER = "forbesmailler"
 YEAR = datetime.now().year
 

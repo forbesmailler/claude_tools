@@ -320,7 +320,6 @@ class TestClaudeRunnerInvoke:
         result = runner.invoke("do stuff")
         assert result.output == "done"
         assert result.exit_code == 0
-        assert runner._last_session_id == "sess-123"
 
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.run_subprocess")
@@ -331,7 +330,6 @@ class TestClaudeRunnerInvoke:
         runner = ClaudeRunner(RunConfig())
         result = runner.invoke("test")
         assert result.output == "ok"
-        assert runner._last_session_id is None
 
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.run_subprocess")

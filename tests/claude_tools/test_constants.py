@@ -7,7 +7,6 @@ from claude_tools.constants import (
     LICENSE_TEMPLATE,
     MAMBA_ACTIVATE,
     MAMBA_BAT,
-    MAMBA_ENVS,
     REPOS_DIR,
     YEAR,
 )
@@ -23,10 +22,6 @@ def test_mamba_activate_path():
 
 def test_mamba_bat_path():
     assert MAMBA_BAT == r"C:\Users\forbe\.local\share\mamba\condabin\mamba.bat"
-
-
-def test_mamba_envs_path():
-    assert MAMBA_ENVS == r"C:\Users\forbe\.local\share\mamba\envs"
 
 
 def test_gh_owner():
