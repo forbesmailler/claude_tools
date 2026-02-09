@@ -41,7 +41,7 @@ def _keypress_monitor():
             if msvcrt.getwch() == "q":
                 _interrupted = True
                 return
-        time.sleep(_cfg["keypress_poll_interval"])
+        time.sleep(_cfg["poll_interval"])
 
 
 threading.Thread(target=_keypress_monitor, daemon=True).start()
@@ -218,7 +218,7 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
 
     while proc.poll() is None:
         check_interrupt()
-        time.sleep(_cfg["subprocess_poll_interval"])
+        time.sleep(_cfg["poll_interval"])
 
     check_interrupt()
     t_out.join()
@@ -256,14 +256,12 @@ class ClaudeRunner:
                 )
                 wait = int((reset_time - datetime.now()).total_seconds()) + padding
                 if wait > 0:
-                    return min(wait, self.config.default_wait_seconds)
+                    return wait
             except ValueError:
                 pass
         match = re.search(r"(\d+)\s*minutes?", text)
         if match:
-            return min(
-                int(match.group(1)) * 60 + padding, self.config.default_wait_seconds
-            )
+            return int(match.group(1)) * 60 + padding
         return self.config.default_wait_seconds
 
     _RATE_LIMIT_RE = re.compile(

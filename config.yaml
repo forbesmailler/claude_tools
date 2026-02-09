@@ -22,12 +22,11 @@ iterate:
   max_iterations: 10
   cooldown_seconds: 30
   default_wait_seconds: 300
-  rate_limit_padding_seconds: 30
+  rate_limit_padding_seconds: 60
+  poll_interval: 0.5
   log_file: "logs/iterate_log.md"
   suffix: >-
     After making changes, run all tests and the code formatter.
     Only make changes you are confident are correct.
     If no changes are needed, respond with exactly NO_CHANGES and nothing else.
   continuation_prompt: "Keep going with the same task."
-  keypress_poll_interval: 0.1
-  subprocess_poll_interval: 0.5
