@@ -79,7 +79,7 @@ class TaskResult:
 class RunConfig:
     model: str | None = None
     max_iterations: int = 10
-    cooldown_seconds: int = 10
+    cooldown_seconds: int = 30
     default_wait_seconds: int = 300
     log_file: Path = field(
         default_factory=lambda: Path.cwd() / "logs" / "iterate_log.md"
@@ -252,14 +252,14 @@ class ClaudeRunner:
                     month=datetime.now().month,
                     day=datetime.now().day,
                 )
-                if reset_time < datetime.now():
-                    reset_time += timedelta(days=1)
-                return int((reset_time - datetime.now()).total_seconds()) + 30
+                wait = int((reset_time - datetime.now()).total_seconds()) + 30
+                if wait > 0:
+                    return min(wait, self.config.default_wait_seconds)
             except ValueError:
                 pass
         match = re.search(r"(\d+)\s*minutes?", text)
         if match:
-            return int(match.group(1)) * 60 + 30
+            return min(int(match.group(1)) * 60 + 30, self.config.default_wait_seconds)
         return self.config.default_wait_seconds
 
     _RATE_LIMIT_RE = re.compile(
@@ -435,8 +435,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cooldown",
         type=int,
-        default=10,
-        help="Seconds to wait between iterations to avoid rate limits (default: 10)",
+        default=30,
+        help="Seconds to wait between iterations to avoid rate limits (default: 30)",
     )
     return parser.parse_args()
 
