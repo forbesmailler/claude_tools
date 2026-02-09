@@ -127,8 +127,20 @@ def create_mamba_env(project_dir, name):
 
 def create_github_repo(project_dir, name):
     subprocess.run(
-        [MAMBA_BAT, "run", "-n", "setup",
-         "gh", "repo", "create", name, "--private", "--source", ".", "--push"],
+        [
+            MAMBA_BAT,
+            "run",
+            "-n",
+            "setup",
+            "gh",
+            "repo",
+            "create",
+            name,
+            "--private",
+            "--source",
+            ".",
+            "--push",
+        ],
         cwd=project_dir,
         check=True,
     )

@@ -238,8 +238,12 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
     def _read(stream, dest):
         dest.append(stream.read())
 
-    t_out = threading.Thread(target=_read, args=(proc.stdout, stdout_chunks), daemon=True)
-    t_err = threading.Thread(target=_read, args=(proc.stderr, stderr_chunks), daemon=True)
+    t_out = threading.Thread(
+        target=_read, args=(proc.stdout, stdout_chunks), daemon=True
+    )
+    t_err = threading.Thread(
+        target=_read, args=(proc.stderr, stderr_chunks), daemon=True
+    )
     t_out.start()
     t_err.start()
 
@@ -388,9 +392,7 @@ class TaskOrchestrator:
             self._output(f"\n{result.output}\n")
 
             if not result.succeeded:
-                self._output(
-                    f"  FAIL: Claude exited with code {result.exit_code}"
-                )
+                self._output(f"  FAIL: Claude exited with code {result.exit_code}")
                 status = TaskStatus.FAILED
                 discard_changes()
                 break
