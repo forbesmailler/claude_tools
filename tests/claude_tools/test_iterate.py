@@ -64,8 +64,8 @@ class TestRunConfig:
     def test_defaults(self):
         c = RunConfig()
         assert c.model is None
-        assert c.max_iterations == 20
-        assert c.default_wait_seconds == 60
+        assert c.max_iterations == 10
+        assert c.default_wait_seconds == 300
         assert c.log_file == Path.cwd() / "logs" / "iterate_log.md"
         assert "NO_CHANGES" in c.suffix
 
@@ -386,7 +386,7 @@ class TestParseArgs:
             args = parse_args()
         assert args.model is None
         assert args.prompts is None
-        assert args.max_iterations == 20
+        assert args.max_iterations == 10
 
     def test_model_flag(self):
         with patch("sys.argv", ["iterate.py", "--model", "opus"]):
