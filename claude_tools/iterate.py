@@ -15,8 +15,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import atexit
-import ctypes
 import json
 import msvcrt
 import re
@@ -28,40 +26,16 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Optional
-
-# ---------------------------------------------------------------------------
-# Ctrl+C handling for Windows/PowerShell
-#
-# Disable ENABLE_PROCESSED_INPUT on the console so Ctrl+C is placed in the
-# input buffer as character 0x03 instead of generating a CTRL_C_EVENT.  A
-# daemon thread polls msvcrt.kbhit()/getwch() for that character and sets
-# _interrupted.  check_interrupt() is called at every loop boundary.
-# ---------------------------------------------------------------------------
 
 _interrupted = False
-_current_proc: Optional[subprocess.Popen] = None
-
-_kernel32 = ctypes.windll.kernel32
-_stdin_handle = _kernel32.GetStdHandle(ctypes.c_ulong(-10 & 0xFFFFFFFF))
-_original_mode = ctypes.c_ulong()
-_kernel32.GetConsoleMode(_stdin_handle, ctypes.byref(_original_mode))
-_kernel32.SetConsoleMode(_stdin_handle, _original_mode.value & ~0x0001)
-
-
-def _restore_console():
-    _kernel32.SetConsoleMode(_stdin_handle, _original_mode.value)
-
-
-atexit.register(_restore_console)
+_current_proc: subprocess.Popen | None = None
 
 
 def _keypress_monitor():
     global _interrupted
     while not _interrupted:
         if msvcrt.kbhit():
-            ch = msvcrt.getwch()
-            if ch == "\x03":
+            if msvcrt.getwch() == "q":
                 _interrupted = True
                 return
         time.sleep(0.1)
@@ -77,8 +51,7 @@ def check_interrupt():
             _current_proc.kill()
             _current_proc.wait()
             _current_proc = None
-        _restore_console()
-        print("\n  Interrupted by user.", flush=True)
+        print("\n  Stopped (q pressed).", flush=True)
         sys.exit(130)
 
 
@@ -104,9 +77,10 @@ class TaskResult:
 
 @dataclass
 class RunConfig:
-    model: Optional[str] = None
+    model: str | None = None
     max_iterations: int = 20
-    default_wait_seconds: int = 900
+    cooldown_seconds: int = 5
+    default_wait_seconds: int = 60
     log_file: Path = field(
         default_factory=lambda: Path.cwd() / "logs" / "iterate_log.md"
     )
@@ -264,14 +238,17 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
 class ClaudeRunner:
     def __init__(self, config: RunConfig):
         self.config = config
-        self._last_session_id: Optional[str] = None
+        self._last_session_id: str | None = None
 
     def _base_args(self) -> list[str]:
-        args = ["claude", "-p", "--dangerously-skip-permissions"]
-        if self.config.model:
-            args += ["--model", self.config.model]
-        args += ["--output-format", "json"]
-        return args
+        return [
+            "claude",
+            "-p",
+            "--dangerously-skip-permissions",
+            *(["--model", self.config.model] if self.config.model else []),
+            "--output-format",
+            "json",
+        ]
 
     def _parse_rate_limit_wait(self, text: str) -> int:
         match = re.search(r"(\d{1,2}:\d{2}\s*(?:AM|PM))", text, re.IGNORECASE)
@@ -292,15 +269,13 @@ class ClaudeRunner:
             return int(match.group(1)) * 60 + 30
         return self.config.default_wait_seconds
 
+    _RATE_LIMIT_RE = re.compile(
+        r"you've hit your limit|usage limit|rate limit|exceeded.*limit|too many requests",
+        re.IGNORECASE,
+    )
+
     def _looks_like_rate_limit(self, text: str) -> bool:
-        patterns = [
-            r"you've hit your limit",
-            r"usage limit",
-            r"rate limit",
-            r"exceeded.*limit",
-            r"too many requests",
-        ]
-        return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+        return bool(self._RATE_LIMIT_RE.search(text))
 
     def invoke(self, prompt: str, continue_session: bool = False) -> ClaudeResult:
         args = self._base_args()
@@ -329,7 +304,6 @@ class ClaudeRunner:
                 print("  Resuming...", flush=True)
                 continue
 
-            output_text = combined
             try:
                 data = json.loads(result.stdout)
                 output_text = data.get("result", result.stdout)
@@ -379,15 +353,20 @@ class TaskOrchestrator:
 
         for iteration in range(1, self.config.max_iterations + 1):
             check_interrupt()
+            if iteration > 1 and self.config.cooldown_seconds > 0:
+                for _ in range(self.config.cooldown_seconds):
+                    check_interrupt()
+                    time.sleep(1)
             iterations = iteration
             self._output(f"\n  --- {task.name} - iteration {iteration} ---")
 
-            if iteration == 1:
-                prompt = f"{task.prompt} {self.config.suffix}"
-                result = self.runner.invoke(prompt, continue_session=False)
-            else:
-                prompt = f"Keep going with the same task. {self.config.suffix}"
-                result = self.runner.invoke(prompt, continue_session=True)
+            base_prompt = (
+                task.prompt if iteration == 1 else "Keep going with the same task."
+            )
+            result = self.runner.invoke(
+                f"{base_prompt} {self.config.suffix}",
+                continue_session=iteration > 1,
+            )
 
             self._output(f"\n{result.output}\n")
 
@@ -462,6 +441,12 @@ def parse_args() -> argparse.Namespace:
         default=20,
         help="Max iterations per task (default: 20)",
     )
+    parser.add_argument(
+        "--cooldown",
+        type=int,
+        default=5,
+        help="Seconds to wait between iterations to avoid rate limits (default: 5)",
+    )
     return parser.parse_args()
 
 
@@ -471,6 +456,7 @@ def main() -> None:
     config = RunConfig(
         model=args.model,
         max_iterations=args.max_iterations,
+        cooldown_seconds=args.cooldown,
     )
 
     if args.prompts:
@@ -478,6 +464,7 @@ def main() -> None:
     else:
         tasks = DEFAULT_TASKS
 
+    print("  Press q to stop.\n", flush=True)
     orchestrator = TaskOrchestrator(tasks, config)
     results = orchestrator.run_all()
 
