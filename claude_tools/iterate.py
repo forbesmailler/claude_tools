@@ -218,9 +218,7 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
     f_out = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
     f_err = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
     try:
-        proc = subprocess.Popen(
-            args, stdin=subprocess.PIPE, stdout=f_out, stderr=f_err
-        )
+        proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=f_out, stderr=f_err)
         proc.stdin.close()
         _current_proc = proc
 
@@ -285,9 +283,7 @@ class ClaudeRunner:
     def _parse_rate_limit_wait(self, text: str) -> int:
         padding = self.config.rate_limit_padding_seconds
         # Match "4:00 PM", "4:00PM", "4pm", "4 PM"
-        match = re.search(
-            r"(\d{1,2})(?::(\d{2}))?\s*([APap][Mm])", text
-        )
+        match = re.search(r"(\d{1,2})(?::(\d{2}))?\s*([APap][Mm])", text)
         if match:
             try:
                 hour_str = match.group(1)
