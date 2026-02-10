@@ -67,7 +67,7 @@ class TestRunConfig:
         c = RunConfig()
         assert c.model is None
         assert c.max_iterations == 10
-        assert c.cooldown_seconds == 30
+        assert c.cooldown_seconds == 60
         assert c.default_wait_seconds == 300
         assert c.rate_limit_padding_seconds == 60
         assert c.log_file == Path.cwd() / "logs" / "iterate_log.md"

@@ -30,3 +30,4 @@ invoke all      # both
 - `iterate.py` git workflow: commit after each iteration, squash all iteration commits into one per task via `git reset --soft`.
 - `commit_changes()` excludes `logs/iterate_log.md` from staging.
 - All machine-specific paths and tuning parameters live in `config.yaml`, loaded by `constants.load_config()`.
+- Default task prompts in `iterate.py` must be maximum 4 string lines (excluding the title). "Read CLAUDE.md" is prefixed automatically at runtime.

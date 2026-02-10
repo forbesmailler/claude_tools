@@ -108,10 +108,10 @@ DEFAULT_TASKS = [
     ),
     Task(
         "Conciseness",
-        "aggressively reduce codebase size without changing behavior. Fewer lines "
-        "is always better. Remove dead code, unused imports, commented-out code, "
-        "unnecessary comments. Inline trivial functions, use comprehensions and "
-        "ternaries, merge duplicate logic, replace nesting with early returns.",
+        "aggressively reduce codebase size without changing behavior or sacrificing "
+        "performance. Remove dead code, unused imports, commented-out code, unnecessary "
+        "comments. Inline trivial functions, use comprehensions and ternaries, merge "
+        "duplicate logic, replace nesting with early returns.",
     ),
     Task(
         "Optimization",
@@ -219,8 +219,9 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
     f_err = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
     try:
         proc = subprocess.Popen(
-            args, stdin=subprocess.DEVNULL, stdout=f_out, stderr=f_err
+            args, stdin=subprocess.PIPE, stdout=f_out, stderr=f_err
         )
+        proc.stdin.close()
         _current_proc = proc
 
         last_size = 0
@@ -283,11 +284,18 @@ class ClaudeRunner:
 
     def _parse_rate_limit_wait(self, text: str) -> int:
         padding = self.config.rate_limit_padding_seconds
-        match = re.search(r"(\d{1,2}:\d{2}\s*(?:AM|PM))", text, re.IGNORECASE)
+        # Match "4:00 PM", "4:00PM", "4pm", "4 PM"
+        match = re.search(
+            r"(\d{1,2})(?::(\d{2}))?\s*([APap][Mm])", text
+        )
         if match:
             try:
+                hour_str = match.group(1)
+                min_str = match.group(2) or "00"
+                ampm = match.group(3).upper()
+                time_str = f"{hour_str}:{min_str} {ampm}"
                 now = datetime.now()
-                reset_time = datetime.strptime(match.group(1), "%I:%M %p").replace(
+                reset_time = datetime.strptime(time_str, "%I:%M %p").replace(
                     year=now.year, month=now.month, day=now.day
                 )
                 wait = int((reset_time - now).total_seconds()) + padding
