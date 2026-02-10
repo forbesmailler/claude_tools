@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import msvcrt
+import os
 import re
 import subprocess
 import sys
@@ -186,12 +187,37 @@ class ClaudeResult:
         return self.succeeded and "NO_CHANGES" in self.output
 
 
+_SKIP_DIRS = {
+    ".git",
+    "__pycache__",
+    "node_modules",
+    ".ruff_cache",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".venv",
+    "venv",
+}
+
+
+def _has_recent_edit(since: float) -> bool:
+    """Check if any file in the working tree was modified after `since` (wall clock)."""
+    for root, dirs, files in os.walk("."):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+        for f in files:
+            try:
+                if os.path.getmtime(os.path.join(root, f)) > since:
+                    return True
+            except OSError:
+                pass
+    return False
+
+
 def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
     """Run a subprocess while remaining responsive to the quit key.
 
     Redirects stdout/stderr to temp files instead of pipes to avoid
     freezing when child processes inherit pipe handles.  Kills the
-    process if output stalls for stall_timeout_seconds.
+    process if output or file edits stall for stall_timeout_seconds.
     """
     global _current_proc
     f_out = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
@@ -201,16 +227,27 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
 
     last_size = 0
     last_activity = time.monotonic()
+    last_edit_wall = time.time()
+    next_edit_check = last_activity + 5
     stall_timeout = _cfg["stall_timeout_seconds"]
 
     while proc.poll() is None:
         check_interrupt()
         time.sleep(_cfg["poll_interval"])
+        now = time.monotonic()
+
         current_size = f_out.tell() + f_err.tell()
         if current_size != last_size:
             last_size = current_size
-            last_activity = time.monotonic()
-        elif time.monotonic() - last_activity > stall_timeout:
+            last_activity = now
+
+        if now >= next_edit_check:
+            next_edit_check = now + 5
+            if _has_recent_edit(last_edit_wall):
+                last_edit_wall = time.time()
+                last_activity = now
+
+        if now - last_activity > stall_timeout:
             print(
                 f"  Process stalled for {stall_timeout}s, killing...",
                 flush=True,

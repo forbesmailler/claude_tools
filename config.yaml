@@ -24,7 +24,7 @@ iterate:
   default_wait_seconds: 300
   rate_limit_padding_seconds: 60
   poll_interval: 0.5
-  stall_timeout_seconds: 600
+  stall_timeout_seconds: 900
   log_file: "logs/iterate_log.md"
   suffix: >-
     After making changes, run all tests and the code formatter.
