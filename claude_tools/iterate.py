@@ -61,7 +61,6 @@ def check_interrupt():
 
 class TaskStatus(Enum):
     CONVERGED = "converged"
-    FAILED = "failed"
     MAX_ITERATIONS = "max iterations"
 
 
@@ -167,11 +166,6 @@ def commit_changes(message: str) -> bool:
     return False
 
 
-def discard_changes() -> None:
-    git("checkout", "--", ".", check=False)
-    git("clean", "-fd", check=False)
-
-
 def squash_task_commits(base_sha: str, message: str) -> None:
     if git_head_sha() != base_sha:
         git("reset", "--soft", base_sha)
@@ -196,7 +190,8 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
     """Run a subprocess while remaining responsive to the quit key.
 
     Redirects stdout/stderr to temp files instead of pipes to avoid
-    freezing when child processes inherit pipe handles.
+    freezing when child processes inherit pipe handles.  Kills the
+    process if output stalls for stall_timeout_seconds.
     """
     global _current_proc
     f_out = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
@@ -204,9 +199,25 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
     proc = subprocess.Popen(args, stdout=f_out, stderr=f_err)
     _current_proc = proc
 
+    last_size = 0
+    last_activity = time.monotonic()
+    stall_timeout = _cfg["stall_timeout_seconds"]
+
     while proc.poll() is None:
         check_interrupt()
         time.sleep(_cfg["poll_interval"])
+        current_size = f_out.tell() + f_err.tell()
+        if current_size != last_size:
+            last_size = current_size
+            last_activity = time.monotonic()
+        elif time.monotonic() - last_activity > stall_timeout:
+            print(
+                f"  Process stalled for {stall_timeout}s, killing...",
+                flush=True,
+            )
+            proc.kill()
+            proc.wait()
+            break
 
     check_interrupt()
     _current_proc = None
@@ -342,6 +353,7 @@ class TaskOrchestrator:
         base_sha = git_head_sha()
         status = TaskStatus.MAX_ITERATIONS
         iterations = 0
+        restart = True
 
         for iteration in range(1, self.config.max_iterations + 1):
             check_interrupt()
@@ -352,21 +364,21 @@ class TaskOrchestrator:
             iterations = iteration
             self._output(f"\n  --- {task.name} - iteration {iteration} ---")
 
-            base_prompt = (
-                task.prompt if iteration == 1 else self.config.continuation_prompt
-            )
+            base_prompt = task.prompt if restart else self.config.continuation_prompt
             result = self.runner.invoke(
                 f"{base_prompt} {self.config.suffix}",
-                continue_session=iteration > 1,
+                continue_session=not restart,
             )
 
             self._output(f"\n{result.output}\n")
 
             if not result.succeeded:
                 self._output(f"  FAIL: Claude exited with code {result.exit_code}")
-                status = TaskStatus.FAILED
-                discard_changes()
-                break
+                commit_changes(f"{task.name} - iteration {iteration}")
+                restart = True
+                continue
+
+            restart = False
 
             if result.signalled_no_changes:
                 elapsed = (time.monotonic() - task_start) / 60
@@ -392,7 +404,6 @@ class TaskOrchestrator:
     def _print_summary(self, elapsed_minutes: float) -> None:
         colors = {
             TaskStatus.CONVERGED: "\033[32m",
-            TaskStatus.FAILED: "\033[31m",
             TaskStatus.MAX_ITERATIONS: "\033[33m",
         }
         reset = "\033[0m"
@@ -468,10 +479,7 @@ def main() -> None:
 
     print("  Press q to stop.\n", flush=True)
     orchestrator = TaskOrchestrator(tasks, config)
-    results = orchestrator.run_all()
-
-    if any(r.status == TaskStatus.FAILED for r in results):
-        sys.exit(1)
+    orchestrator.run_all()
 
 
 if __name__ == "__main__":

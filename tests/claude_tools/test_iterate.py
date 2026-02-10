@@ -21,7 +21,6 @@ from claude_tools.iterate import (
     TaskStatus,
     check_interrupt,
     commit_changes,
-    discard_changes,
     git,
     git_head_sha,
     main,
@@ -34,11 +33,10 @@ from claude_tools.iterate import (
 class TestTaskStatus:
     def test_values(self):
         assert TaskStatus.CONVERGED.value == "converged"
-        assert TaskStatus.FAILED.value == "failed"
         assert TaskStatus.MAX_ITERATIONS.value == "max iterations"
 
     def test_all_members(self):
-        assert len(TaskStatus) == 3
+        assert len(TaskStatus) == 2
 
 
 class TestTask:
@@ -55,9 +53,11 @@ class TestTaskResult:
         assert r.elapsed_minutes == 0.0
 
     def test_custom_values(self):
-        r = TaskResult("t", TaskStatus.FAILED, iterations=5, elapsed_minutes=12.3)
+        r = TaskResult(
+            "t", TaskStatus.MAX_ITERATIONS, iterations=5, elapsed_minutes=12.3
+        )
         assert r.name == "t"
-        assert r.status == TaskStatus.FAILED
+        assert r.status == TaskStatus.MAX_ITERATIONS
         assert r.iterations == 5
         assert r.elapsed_minutes == 12.3
 
@@ -194,15 +194,6 @@ class TestCommitChanges:
         ]
         assert commit_changes("msg") is False
         assert mock_git.call_count == 2
-
-
-class TestDiscardChanges:
-    @patch("claude_tools.iterate.git")
-    def test_calls_checkout_and_clean(self, mock_git):
-        discard_changes()
-        assert mock_git.call_count == 2
-        mock_git.assert_any_call("checkout", "--", ".", check=False)
-        mock_git.assert_any_call("clean", "-fd", check=False)
 
 
 class TestSquashTaskCommits:
@@ -462,14 +453,14 @@ class TestTaskOrchestrator:
 
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.squash_task_commits")
-    @patch("claude_tools.iterate.discard_changes")
+    @patch("claude_tools.iterate.commit_changes", return_value=True)
     @patch("claude_tools.iterate.git_head_sha", return_value="sha1")
     @patch.object(ClaudeRunner, "invoke")
-    def test_task_fails_on_nonzero_exit(
+    def test_task_continues_on_nonzero_exit(
         self,
         mock_invoke,
         mock_sha,
-        mock_discard,
+        mock_commit,
         mock_squash,
         mock_interrupt,
         tmp_path,
@@ -479,8 +470,8 @@ class TestTaskOrchestrator:
         results = orch.run_all()
 
         assert len(results) == 1
-        assert results[0].status == TaskStatus.FAILED
-        mock_discard.assert_called_once()
+        assert results[0].status == TaskStatus.MAX_ITERATIONS
+        assert results[0].iterations == 2
 
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.squash_task_commits")
@@ -695,20 +686,6 @@ class TestMainFunction:
 
         tasks_arg = mock_orch_cls.call_args[0][0]
         assert tasks_arg is DEFAULT_TASKS
-
-    @patch("claude_tools.iterate.TaskOrchestrator")
-    @patch("claude_tools.iterate.parse_args")
-    def test_main_exits_on_failure(self, mock_args, mock_orch_cls):
-        mock_args.return_value = MagicMock(
-            model=None, prompts=None, tasks=None, max_iterations=20, cooldown=5
-        )
-        mock_orch = MagicMock()
-        mock_orch.run_all.return_value = [TaskResult("T", TaskStatus.FAILED, 1, 1.0)]
-        mock_orch_cls.return_value = mock_orch
-
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-        assert exc_info.value.code == 1
 
     @patch("claude_tools.iterate.TaskOrchestrator")
     @patch("claude_tools.iterate.parse_args")
