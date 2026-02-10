@@ -30,5 +30,5 @@ iterate:
   suffix: >-
     After making changes, run all tests and the code formatter.
     Only make changes you are confident are correct.
-    If no changes are needed, respond with exactly NO_CHANGES and nothing else.
+    CRITICAL: If there are zero changes to make, you MUST respond with the single word NO_CHANGES and absolutely nothing else — no explanation, no summary, no commentary.
   continuation_prompt: "Keep going with the same task."
