@@ -433,6 +433,7 @@ class TestTaskOrchestrator:
     def _make_orchestrator(self, tasks, tmp_path, max_iterations=2):
         config = RunConfig(
             max_iterations=max_iterations,
+            cooldown_seconds=0,
             log_file=tmp_path / "log.md",
         )
         return TaskOrchestrator(tasks, config)
@@ -791,10 +792,17 @@ class TestRunSubprocess:
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.time.sleep")
     @patch("claude_tools.iterate.subprocess.Popen")
-    def test_captures_stdout_and_stderr(self, mock_popen, mock_sleep, mock_interrupt):
+    @patch("claude_tools.iterate.tempfile.TemporaryFile")
+    def test_captures_stdout_and_stderr(
+        self, mock_tmpfile, mock_popen, mock_sleep, mock_interrupt
+    ):
+        f_out = StringIO()
+        f_err = StringIO()
+        mock_tmpfile.side_effect = [f_out, f_err]
+        f_out.write("hello stdout")
+        f_err.write("hello stderr")
+
         mock_proc = MagicMock()
-        mock_proc.stdout = StringIO("hello stdout")
-        mock_proc.stderr = StringIO("hello stderr")
         mock_proc.poll.return_value = 0
         mock_proc.returncode = 0
         mock_popen.return_value = mock_proc
@@ -807,10 +815,12 @@ class TestRunSubprocess:
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.time.sleep")
     @patch("claude_tools.iterate.subprocess.Popen")
-    def test_polls_until_complete(self, mock_popen, mock_sleep, mock_interrupt):
+    @patch("claude_tools.iterate.tempfile.TemporaryFile")
+    def test_polls_until_complete(
+        self, mock_tmpfile, mock_popen, mock_sleep, mock_interrupt
+    ):
+        mock_tmpfile.side_effect = [StringIO(), StringIO()]
         mock_proc = MagicMock()
-        mock_proc.stdout = StringIO("out")
-        mock_proc.stderr = StringIO("")
         mock_proc.poll.side_effect = [None, None, 0]
         mock_proc.returncode = 0
         mock_popen.return_value = mock_proc
@@ -822,10 +832,16 @@ class TestRunSubprocess:
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.time.sleep")
     @patch("claude_tools.iterate.subprocess.Popen")
-    def test_nonzero_exit_code(self, mock_popen, mock_sleep, mock_interrupt):
+    @patch("claude_tools.iterate.tempfile.TemporaryFile")
+    def test_nonzero_exit_code(
+        self, mock_tmpfile, mock_popen, mock_sleep, mock_interrupt
+    ):
+        f_out = StringIO()
+        f_err = StringIO()
+        mock_tmpfile.side_effect = [f_out, f_err]
+        f_err.write("fail")
+
         mock_proc = MagicMock()
-        mock_proc.stdout = StringIO("")
-        mock_proc.stderr = StringIO("fail")
         mock_proc.poll.return_value = 1
         mock_proc.returncode = 1
         mock_popen.return_value = mock_proc

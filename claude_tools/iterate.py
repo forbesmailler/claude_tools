@@ -20,6 +20,7 @@ import msvcrt
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -192,47 +193,30 @@ class ClaudeResult:
 
 
 def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
-    """Run a subprocess while remaining responsive to Ctrl+C.
+    """Run a subprocess while remaining responsive to the quit key.
 
-    Uses Popen + daemon reader threads so the main thread polls with
-    short sleeps and can check the _interrupted flag between them.
+    Redirects stdout/stderr to temp files instead of pipes to avoid
+    freezing when child processes inherit pipe handles.
     """
     global _current_proc
-    proc = subprocess.Popen(
-        args,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    f_out = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
+    f_err = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
+    proc = subprocess.Popen(args, stdout=f_out, stderr=f_err)
     _current_proc = proc
-    stdout_chunks: list[str] = []
-    stderr_chunks: list[str] = []
-
-    t_out = threading.Thread(
-        target=lambda: stdout_chunks.append(proc.stdout.read()), daemon=True
-    )
-    t_err = threading.Thread(
-        target=lambda: stderr_chunks.append(proc.stderr.read()), daemon=True
-    )
-    t_out.start()
-    t_err.start()
 
     while proc.poll() is None:
         check_interrupt()
         time.sleep(_cfg["poll_interval"])
 
     check_interrupt()
-    t_out.join(timeout=5)
-    t_err.join(timeout=5)
-    if t_out.is_alive() or t_err.is_alive():
-        proc.stdout.close()
-        proc.stderr.close()
-        t_out.join(timeout=2)
-        t_err.join(timeout=2)
     _current_proc = None
 
-    stdout = stdout_chunks[0] if stdout_chunks else ""
-    stderr = stderr_chunks[0] if stderr_chunks else ""
+    f_out.seek(0)
+    f_err.seek(0)
+    stdout = f_out.read()
+    stderr = f_err.read()
+    f_out.close()
+    f_err.close()
     return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
 
 
