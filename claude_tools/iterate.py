@@ -94,50 +94,45 @@ class RunConfig:
 DEFAULT_TASKS = [
     Task(
         "Bug fixes",
-        "Read CLAUDE.md, then search every source file for bugs. For each bug found, "
-        "make the smallest correct fix. Look for: off-by-one errors, logic errors, "
-        "edge cases (empty inputs, None, zero, negative), race conditions, resource "
-        "leaks, swallowed exceptions, incorrect boundary checks, and silent data "
-        "truncation. Do not mask bugs with clamping or bounds checks.",
+        "search every source file for bugs and make the smallest correct fix. "
+        "Look for: off-by-one errors, logic errors, edge cases (empty, None, zero, "
+        "negative), race conditions, resource leaks, swallowed exceptions. "
+        "Do not mask bugs with clamping or bounds checks.",
     ),
     Task(
         "Test coverage",
-        "Read CLAUDE.md, then run the test suite with coverage. For every function or "
-        "branch below 90% coverage, write focused unit tests. Follow the layout "
-        "tests/foo/test_bar.py for foo/bar.py. Each assertion must check an exact "
-        "expected value, not just truthiness or type. When asserting on a subset also "
-        "assert the total count. Prioritize: error paths, boundary values (zero, empty, "
-        "max, negative, one-off), and uncommon but valid inputs.",
+        "run the test suite with coverage. For every function or branch below 90%, "
+        "write focused unit tests in tests/foo/test_bar.py for foo/bar.py. "
+        "Assert exact expected values, not just truthiness. "
+        "Prioritize error paths, boundary values, and uncommon but valid inputs.",
     ),
     Task(
         "Conciseness",
-        "Read CLAUDE.md, then make the codebase more concise without changing behavior. "
-        "Remove dead code, unused imports, unreachable branches, commented-out code, and "
-        "deprecated APIs. Inline trivial one-call functions that add no clarity. Replace "
-        "deep nesting with early returns. Do not extract helpers unless logic is "
-        "duplicated 3+ times.",
+        "aggressively reduce codebase size without changing behavior. Fewer lines "
+        "is always better. Remove dead code, unused imports, commented-out code, "
+        "unnecessary comments. Inline trivial functions, use comprehensions and "
+        "ternaries, merge duplicate logic, replace nesting with early returns.",
     ),
     Task(
         "Optimization",
-        "Read CLAUDE.md, then profile or inspect the codebase for performance issues. "
-        "Fix: O(n^2)+ algorithms that can be O(n log n) or O(n), repeated lookups that "
-        "should be cached, unnecessary copies of large objects, allocations inside tight "
-        "loops, redundant recomputation. For I/O-bound thread pools set "
-        "max_workers=os.cpu_count(). Do not sacrifice readability for marginal gains.",
+        "inspect the codebase for performance issues. Fix: O(n^2)+ algorithms, "
+        "repeated lookups that should be cached, unnecessary copies, allocations "
+        "in tight loops, redundant recomputation. "
+        "Do not sacrifice readability for marginal gains.",
     ),
     Task(
         "Config",
-        "Read CLAUDE.md, then find hardcoded constants, magic numbers, URLs, timeouts, "
-        "thresholds, and tuning parameters in source files. Move each to a YAML config "
-        "file (not JSON/TOML/INI). Reuse the existing config loader if one exists; "
-        "otherwise create one. Replace every hardcoded value with a config read.",
+        "find hardcoded constants, magic numbers, URLs, timeouts, and tuning "
+        "parameters in source files. Move each to a YAML config file. "
+        "Reuse the existing config loader if one exists; otherwise create one. "
+        "Replace every hardcoded value with a config read.",
     ),
     Task(
         "Markdown",
-        "Read CLAUDE.md, then review every markdown file in the repo. Fix factual "
-        "inaccuracies, stale sections, and incorrect command examples so they reflect "
-        "the current code. Fix broken links and inconsistent formatting. Remove "
-        "duplication between files. Keep wording concise. Do not add new sections.",
+        "review every markdown file. Fix factual inaccuracies, stale sections, "
+        "and incorrect command examples so they reflect the current code. "
+        "Fix broken links, remove duplication between files. "
+        "Keep wording concise. Do not add new sections.",
     ),
 ]
 
@@ -405,7 +400,10 @@ class TaskOrchestrator:
             iterations = iteration
             self._output(f"\n  --- {task.name} - iteration {iteration} ---")
 
-            base_prompt = task.prompt if restart else self.config.continuation_prompt
+            if restart:
+                base_prompt = f"Read CLAUDE.md, then {task.prompt}"
+            else:
+                base_prompt = self.config.continuation_prompt
             result = self.runner.invoke(
                 f"{base_prompt} {self.config.suffix}",
                 continue_session=not restart,
