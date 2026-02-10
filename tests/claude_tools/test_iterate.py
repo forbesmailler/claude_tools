@@ -579,6 +579,47 @@ class TestTaskOrchestrator:
 
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.squash_task_commits")
+    @patch("claude_tools.iterate.commit_changes", return_value=True)
+    @patch("claude_tools.iterate.git_head_sha", return_value="sha1")
+    @patch.object(ClaudeRunner, "invoke")
+    def test_prompt_too_long_retries_with_fresh_session(
+        self,
+        mock_invoke,
+        mock_sha,
+        mock_commit,
+        mock_squash,
+        mock_interrupt,
+        tmp_path,
+    ):
+        call_count = [0]
+
+        def side_effect(prompt, continue_session=False):
+            call_count[0] += 1
+            # Call 1: _format_pass
+            # Call 2: iteration 1 (fresh) -> success
+            # Call 3: iteration 2 (continue) -> prompt too long
+            # Call 4: iteration 2 retry (fresh) -> NO_CHANGES
+            if call_count[0] == 3:
+                return ClaudeResult(output="Prompt is too long", exit_code=1)
+            if call_count[0] == 4:
+                return ClaudeResult(output="NO_CHANGES", exit_code=0)
+            return ClaudeResult(output="changes", exit_code=0)
+
+        mock_invoke.side_effect = side_effect
+        orch = self._make_orchestrator(
+            [Task("T1", "Fix bugs")], tmp_path, max_iterations=3
+        )
+        results = orch.run_all()
+
+        assert results[0].status == TaskStatus.CONVERGED
+        assert results[0].iterations == 2
+        # Retry call should be fresh (continue_session=False) with task prompt
+        retry_call = mock_invoke.call_args_list[3]
+        assert "Fix bugs" in retry_call[0][0]
+        assert retry_call[1].get("continue_session") is False
+
+    @patch("claude_tools.iterate.check_interrupt")
+    @patch("claude_tools.iterate.squash_task_commits")
     @patch("claude_tools.iterate.commit_changes", return_value=False)
     @patch("claude_tools.iterate.git_head_sha", return_value="sha1")
     @patch.object(ClaudeRunner, "invoke")

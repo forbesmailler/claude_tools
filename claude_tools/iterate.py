@@ -379,15 +379,25 @@ class TaskOrchestrator:
             iterations = iteration
             self._output(f"\n  --- {task.name} - iteration {iteration} ---")
 
-            base_prompt = (
-                f"Read CLAUDE.md, then {task.prompt}"
-                if restart
-                else self.config.continuation_prompt
-            )
-            result = self.runner.invoke(
-                f"{base_prompt} {self.config.suffix}",
-                continue_session=not restart,
-            )
+            for _attempt in range(2):
+                base_prompt = (
+                    f"Read CLAUDE.md, then {task.prompt}"
+                    if restart
+                    else self.config.continuation_prompt
+                )
+                result = self.runner.invoke(
+                    f"{base_prompt} {self.config.suffix}",
+                    continue_session=not restart,
+                )
+                if (
+                    not result.succeeded
+                    and not restart
+                    and "prompt is too long" in result.output.lower()
+                ):
+                    self._output("  Prompt too long, restarting fresh session...")
+                    restart = True
+                    continue
+                break
 
             self._output(f"\n{result.output}\n")
 
