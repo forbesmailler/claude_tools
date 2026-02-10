@@ -25,7 +25,7 @@ invoke all      # both
 
 ## Architecture Notes
 
-- Scripts in `claude_tools/` are run directly (`python setup.py <name>`, `python iterate.py`), not as an installed package.
+- Scripts in `claude_tools/` are run directly (`python claude_tools/setup.py <name>`, `python claude_tools/iterate.py`), not as an installed package.
 - `iterate.py` uses `claude -p --dangerously-skip-permissions --output-format json` and parses JSON output. Rate limit detection uses regex against combined stdout+stderr.
 - `iterate.py` git workflow: commit after each iteration, squash all iteration commits into one per task via `git reset --soft`.
 - `commit_changes()` excludes `logs/iterate_log.md` from staging.
