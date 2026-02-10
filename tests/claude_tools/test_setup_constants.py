@@ -1,6 +1,6 @@
-"""Tests for claude_tools.constants."""
+"""Tests for claude_tools.setup_constants."""
 
-from claude_tools.constants import (
+from claude_tools.setup_constants import (
     CLAUDE_SETTINGS,
     CONDA_CHANNEL,
     DEFAULT_DEPS,
@@ -99,10 +99,7 @@ def test_claude_settings_is_valid_json():
 
 def test_load_config_returns_expected_sections():
     cfg = load_config()
-    assert "paths" in cfg
-    assert "github" in cfg
-    assert "setup" in cfg
-    assert "iterate" in cfg
+    assert set(cfg.keys()) == {"paths", "github", "setup"}
 
 
 def test_load_config_paths_match_module_constants():

@@ -1,0 +1,19 @@
+paths:
+  repos_dir: "C:\\Users\\forbe\\repos"
+  mamba_activate: "C:\\Users\\forbe\\miniforge3\\Scripts\\activate.bat"
+  mamba_bat: "C:\\Users\\forbe\\.local\\share\\mamba\\condabin\\mamba.bat"
+
+github:
+  owner: "forbesmailler"
+
+setup:
+  gh_env_name: "setup"
+  repo_visibility: "private"
+  conda_channel: "conda-forge"
+  default_deps:
+    - python
+    - invoke
+    - ruff
+    - pytest
+    - pytest-cov
+  line_length: 88

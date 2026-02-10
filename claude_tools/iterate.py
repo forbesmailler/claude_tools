@@ -18,9 +18,11 @@ from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 
-from constants import load_config
+import yaml
 
-_cfg = load_config()["iterate"]
+_CONFIG_PATH = Path(__file__).resolve().parent.parent / "iterate_config.yaml"
+with open(_CONFIG_PATH) as _f:
+    _cfg = yaml.safe_load(_f)
 _interrupted = False
 _current_proc: subprocess.Popen | None = None
 

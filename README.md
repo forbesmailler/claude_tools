@@ -28,13 +28,14 @@ python claude_tools/iterate.py --max-iterations 5                  # Override it
 
 Default tasks (selectable via `-t`): `bugs`, `tests`, `concise`, `optimize`, `config`, `markdown`.
 
-### `constants.py` — Shared configuration
+### `setup_constants.py` — Setup configuration
 
-Loads `config.yaml` and exports paths, GitHub settings, and file templates used by both scripts.
+Loads `setup_config.yaml` and exports paths, GitHub settings, and file templates used by `setup.py`.
 
 ## Configuration
 
-All tunable parameters live in `config.yaml`: file paths, GitHub owner, iteration limits, timeouts, polling intervals, default dependencies, and task suffixes.
+- **`setup_config.yaml`** — file paths, GitHub owner, default dependencies, line length.
+- **`iterate_config.yaml`** — iteration limits, timeouts, polling intervals, task suffixes.
 
 ## Setup
 

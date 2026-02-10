@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 
-from constants import (
+from setup_constants import (
     CLAUDE_SETTINGS,
     CONDA_CHANNEL,
     DEFAULT_DEPS,

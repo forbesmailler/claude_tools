@@ -1,0 +1,13 @@
+max_iterations: 10
+cooldown_seconds: 60
+default_wait_seconds: 300
+rate_limit_padding_seconds: 60
+poll_interval: 0.5
+edit_check_interval: 5
+stall_timeout_seconds: 900
+log_file: "logs/iterate_log.md"
+suffix: >-
+  After making changes, run all tests and the code formatter.
+  Only make changes you are confident are correct.
+  CRITICAL: If there are zero changes to make, you MUST respond with the single word NO_CHANGES and absolutely nothing else — no explanation, no summary, no commentary.
+continuation_prompt: "Keep going with the same task."

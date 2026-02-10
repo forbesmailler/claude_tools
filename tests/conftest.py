@@ -1,4 +1,4 @@
-"""Add claude_tools/ to sys.path so setup.py's `from constants import ...` resolves."""
+"""Add claude_tools/ to sys.path so setup.py's `from setup_constants import ...` resolves."""
 
 import sys
 from pathlib import Path
