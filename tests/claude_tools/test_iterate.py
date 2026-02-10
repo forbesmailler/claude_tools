@@ -1,6 +1,7 @@
 """Tests for claude_tools.iterate."""
 
 import subprocess
+import time
 from datetime import datetime, timedelta
 from io import StringIO
 from pathlib import Path
@@ -19,6 +20,8 @@ from claude_tools.iterate import (
     TaskOrchestrator,
     TaskResult,
     TaskStatus,
+    _has_recent_edit,
+    _keypress_monitor,
     check_interrupt,
     commit_changes,
     git,
@@ -836,3 +839,256 @@ class TestParseRateLimitWaitValueError:
         wait = runner._parse_rate_limit_wait("Resets at 99:99 AM")
         # Falls through to minutes pattern or default
         assert wait == 900
+
+
+class TestHasRecentEdit:
+    def test_returns_true_for_recently_modified_file(self, tmp_path):
+        f = tmp_path / "file.txt"
+        f.write_text("hello")
+        past = time.time() - 10
+        with patch("claude_tools.iterate.os.walk") as mock_walk:
+            mock_walk.return_value = [(str(tmp_path), [], ["file.txt"])]
+            with patch(
+                "claude_tools.iterate.os.path.getmtime",
+                return_value=time.time(),
+            ):
+                assert _has_recent_edit(past) is True
+
+    def test_returns_false_when_no_files_modified(self):
+        past = time.time() + 100
+        with patch("claude_tools.iterate.os.walk") as mock_walk:
+            mock_walk.return_value = [(".", [], ["old.txt"])]
+            with patch(
+                "claude_tools.iterate.os.path.getmtime",
+                return_value=time.time() - 200,
+            ):
+                assert _has_recent_edit(past) is False
+
+    def test_skips_excluded_dirs(self):
+        with patch("claude_tools.iterate.os.walk") as mock_walk:
+            dirs = [".git", "__pycache__", "src"]
+            mock_walk.return_value = [(".", dirs, [])]
+            _has_recent_edit(0)
+            assert dirs == ["src"]
+
+    def test_handles_oserror_gracefully(self):
+        with patch("claude_tools.iterate.os.walk") as mock_walk:
+            mock_walk.return_value = [(".", [], ["gone.txt"])]
+            with patch(
+                "claude_tools.iterate.os.path.getmtime",
+                side_effect=OSError("file gone"),
+            ):
+                assert _has_recent_edit(0) is False
+
+    def test_returns_false_for_empty_dir(self):
+        with patch("claude_tools.iterate.os.walk") as mock_walk:
+            mock_walk.return_value = [(".", [], [])]
+            assert _has_recent_edit(0) is False
+
+
+class TestKeypressMonitor:
+    @patch("claude_tools.iterate.time.sleep")
+    @patch("claude_tools.iterate.msvcrt")
+    def test_sets_interrupted_on_q(self, mock_msvcrt, mock_sleep):
+        import claude_tools.iterate as mod
+
+        original = mod._interrupted
+        try:
+            mod._interrupted = False
+            mock_msvcrt.kbhit.return_value = True
+            mock_msvcrt.getwch.return_value = "q"
+            _keypress_monitor()
+            assert mod._interrupted is True
+        finally:
+            mod._interrupted = original
+
+    @patch("claude_tools.iterate.time.sleep")
+    @patch("claude_tools.iterate.msvcrt")
+    def test_ignores_non_q_key(self, mock_msvcrt, mock_sleep):
+        import claude_tools.iterate as mod
+
+        original = mod._interrupted
+        try:
+            mod._interrupted = False
+            call_count = [0]
+
+            def kbhit_side():
+                call_count[0] += 1
+                return call_count[0] <= 2
+
+            def getwch_side():
+                return "x"
+
+            def check_loop(*a):
+                # After a couple iterations, set interrupted to break the loop
+                if call_count[0] >= 2:
+                    mod._interrupted = True
+
+            mock_msvcrt.kbhit.side_effect = kbhit_side
+            mock_msvcrt.getwch.side_effect = getwch_side
+            mock_sleep.side_effect = check_loop
+            _keypress_monitor()
+        finally:
+            mod._interrupted = original
+
+
+class TestRunSubprocessStall:
+    @patch("claude_tools.iterate._has_recent_edit", return_value=False)
+    @patch("claude_tools.iterate.check_interrupt")
+    @patch("claude_tools.iterate.subprocess.Popen")
+    @patch("claude_tools.iterate.tempfile.TemporaryFile")
+    def test_kills_on_stall_timeout(
+        self, mock_tmpfile, mock_popen, mock_interrupt, mock_recent
+    ):
+        f_out = StringIO()
+        f_err = StringIO()
+        mock_tmpfile.side_effect = [f_out, f_err]
+
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None  # never finishes
+        mock_proc.returncode = -9
+        mock_popen.return_value = mock_proc
+
+        # Make time.monotonic advance past stall_timeout on each call
+        mono_values = iter([0, 0, 0, 1000, 1000, 1000, 1000, 1000, 1000, 1000])
+
+        with patch("claude_tools.iterate.time.monotonic", side_effect=mono_values):
+            with patch("claude_tools.iterate.time.sleep"):
+                with patch("claude_tools.iterate.time.time", return_value=0):
+                    result = run_subprocess(["stalling"])
+
+        mock_proc.kill.assert_called_once()
+        mock_proc.wait.assert_called_once()
+        assert result.returncode == -9
+
+    @patch("claude_tools.iterate._has_recent_edit", return_value=False)
+    @patch("claude_tools.iterate.check_interrupt")
+    @patch("claude_tools.iterate.subprocess.Popen")
+    @patch("claude_tools.iterate.tempfile.TemporaryFile")
+    def test_stdout_growth_resets_activity(
+        self, mock_tmpfile, mock_popen, mock_interrupt, mock_recent
+    ):
+        f_out = MagicMock()
+        f_err = MagicMock()
+        mock_tmpfile.side_effect = [f_out, f_err]
+
+        # f_out.tell() returns 10 in the loop, triggering size != last_size (0)
+        f_out.tell.return_value = 10
+        f_err.tell.return_value = 0
+        f_out.seek = MagicMock()
+        f_err.seek = MagicMock()
+        f_out.read.return_value = "output"
+        f_err.read.return_value = ""
+        f_out.close = MagicMock()
+        f_err.close = MagicMock()
+
+        mock_proc = MagicMock()
+        mock_proc.poll.side_effect = [None, 0]
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
+        mono = iter([0, 0, 1, 1, 1])
+        with patch("claude_tools.iterate.time.monotonic", side_effect=mono):
+            with patch("claude_tools.iterate.time.sleep"):
+                with patch("claude_tools.iterate.time.time", return_value=0):
+                    result = run_subprocess(["cmd"])
+
+        assert result.returncode == 0
+        assert result.stdout == "output"
+
+    @patch("claude_tools.iterate._has_recent_edit", return_value=True)
+    @patch("claude_tools.iterate.check_interrupt")
+    @patch("claude_tools.iterate.subprocess.Popen")
+    @patch("claude_tools.iterate.tempfile.TemporaryFile")
+    def test_recent_edit_resets_activity(
+        self, mock_tmpfile, mock_popen, mock_interrupt, mock_recent
+    ):
+        f_out = MagicMock()
+        f_err = MagicMock()
+        mock_tmpfile.side_effect = [f_out, f_err]
+        f_out.tell.return_value = 0
+        f_err.tell.return_value = 0
+        f_out.seek = MagicMock()
+        f_err.seek = MagicMock()
+        f_out.read.return_value = ""
+        f_err.read.return_value = ""
+        f_out.close = MagicMock()
+        f_err.close = MagicMock()
+
+        mock_proc = MagicMock()
+        mock_proc.poll.side_effect = [None, 0]
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
+        # monotonic calls: (1) last_activity=0, (2) next_edit_check=0+5=5,
+        # loop: (3) now=10 which is >=5, triggers edit check. Then proc exits.
+        mono = iter([0, 10, 10])
+        with patch("claude_tools.iterate.time.monotonic", side_effect=mono):
+            with patch("claude_tools.iterate.time.sleep"):
+                with patch("claude_tools.iterate.time.time", return_value=100):
+                    result = run_subprocess(["cmd"])
+
+        mock_recent.assert_called()
+        assert result.returncode == 0
+
+
+class TestTaskOrchestratorCooldown:
+    @patch("claude_tools.iterate.time.sleep")
+    @patch("claude_tools.iterate.check_interrupt")
+    @patch("claude_tools.iterate.squash_task_commits")
+    @patch("claude_tools.iterate.commit_changes", return_value=True)
+    @patch("claude_tools.iterate.git_head_sha", return_value="sha1")
+    @patch.object(ClaudeRunner, "invoke")
+    def test_cooldown_waits_between_iterations(
+        self,
+        mock_invoke,
+        mock_sha,
+        mock_commit,
+        mock_squash,
+        mock_interrupt,
+        mock_sleep,
+        tmp_path,
+    ):
+        call_count = [0]
+
+        def side_effect(prompt, continue_session=False):
+            call_count[0] += 1
+            if call_count[0] >= 3:  # format + 2 task iterations
+                return ClaudeResult(output="NO_CHANGES", exit_code=0)
+            return ClaudeResult(output="changes", exit_code=0)
+
+        mock_invoke.side_effect = side_effect
+        config = RunConfig(
+            max_iterations=3,
+            cooldown_seconds=2,
+            log_file=tmp_path / "log.md",
+        )
+        orch = TaskOrchestrator([Task("T1", "prompt")], config)
+        orch.run_all()
+
+        # Cooldown sleeps: iteration 2 and 3 each sleep 2 times (2 seconds)
+        sleep_calls = [c for c in mock_sleep.call_args_list if c[0] == (1,)]
+        assert len(sleep_calls) >= 2
+
+
+class TestMainWithTaskKeys:
+    @patch("claude_tools.iterate.TaskOrchestrator")
+    @patch("claude_tools.iterate.parse_args")
+    def test_main_with_task_keys(self, mock_args, mock_orch_cls):
+        mock_args.return_value = MagicMock(
+            model=None,
+            prompts=None,
+            tasks=["bugs", "tests"],
+            max_iterations=10,
+            cooldown=60,
+        )
+        mock_orch = MagicMock()
+        mock_orch.run_all.return_value = [TaskResult("T", TaskStatus.CONVERGED, 1, 1.0)]
+        mock_orch_cls.return_value = mock_orch
+
+        main()
+
+        tasks_arg = mock_orch_cls.call_args[0][0]
+        assert len(tasks_arg) == 2
+        assert tasks_arg[0] is TASK_MAP["bugs"]
+        assert tasks_arg[1] is TASK_MAP["tests"]
