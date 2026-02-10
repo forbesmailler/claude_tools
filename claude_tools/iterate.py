@@ -222,50 +222,54 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
     global _current_proc
     f_out = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
     f_err = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
-    proc = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=f_out, stderr=f_err)
-    _current_proc = proc
+    try:
+        proc = subprocess.Popen(
+            args, stdin=subprocess.DEVNULL, stdout=f_out, stderr=f_err
+        )
+        _current_proc = proc
 
-    last_size = 0
-    last_activity = time.monotonic()
-    last_edit_wall = time.time()
-    next_edit_check = last_activity + 5
-    stall_timeout = _cfg["stall_timeout_seconds"]
+        last_size = 0
+        last_activity = time.monotonic()
+        last_edit_wall = time.time()
+        next_edit_check = last_activity + 5
+        stall_timeout = _cfg["stall_timeout_seconds"]
 
-    while proc.poll() is None:
-        check_interrupt()
-        time.sleep(_cfg["poll_interval"])
-        now = time.monotonic()
+        while proc.poll() is None:
+            check_interrupt()
+            time.sleep(_cfg["poll_interval"])
+            now = time.monotonic()
 
-        current_size = f_out.tell() + f_err.tell()
-        if current_size != last_size:
-            last_size = current_size
-            last_activity = now
-
-        if now >= next_edit_check:
-            next_edit_check = now + 5
-            if _has_recent_edit(last_edit_wall):
-                last_edit_wall = time.time()
+            current_size = f_out.tell() + f_err.tell()
+            if current_size != last_size:
+                last_size = current_size
                 last_activity = now
 
-        if now - last_activity > stall_timeout:
-            print(
-                f"  Process stalled for {stall_timeout}s, killing...",
-                flush=True,
-            )
-            proc.kill()
-            proc.wait()
-            break
+            if now >= next_edit_check:
+                next_edit_check = now + 5
+                if _has_recent_edit(last_edit_wall):
+                    last_edit_wall = time.time()
+                    last_activity = now
 
-    check_interrupt()
-    _current_proc = None
+            if now - last_activity > stall_timeout:
+                print(
+                    f"  Process stalled for {stall_timeout}s, killing...",
+                    flush=True,
+                )
+                proc.kill()
+                proc.wait()
+                break
 
-    f_out.seek(0)
-    f_err.seek(0)
-    stdout = f_out.read()
-    stderr = f_err.read()
-    f_out.close()
-    f_err.close()
-    return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
+        check_interrupt()
+        _current_proc = None
+
+        f_out.seek(0)
+        f_err.seek(0)
+        stdout = f_out.read()
+        stderr = f_err.read()
+        return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
+    finally:
+        f_out.close()
+        f_err.close()
 
 
 class ClaudeRunner:
