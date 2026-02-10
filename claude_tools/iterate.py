@@ -306,7 +306,7 @@ class TaskOrchestrator:
 
     def _output(self, text: str) -> None:
         print(text)
-        with self.config.log_file.open("a") as f:
+        with self.config.log_file.open("a", encoding="utf-8") as f:
             f.write(text + "\n")
 
     def _format_pass(self) -> None:
@@ -319,7 +319,7 @@ class TaskOrchestrator:
 
     def run_all(self) -> list[TaskResult]:
         self.config.log_file.parent.mkdir(parents=True, exist_ok=True)
-        self.config.log_file.write_text("# Iteration Log\n\n")
+        self.config.log_file.write_text("# Iteration Log\n\n", encoding="utf-8")
         overall_start = time.monotonic()
 
         self._format_pass()
@@ -406,7 +406,7 @@ class TaskOrchestrator:
                 f"  {c}{r.status.value:<15}{reset} {r.name} "
                 f"({r.iterations} iter, {r.elapsed_minutes:.1f}m)"
             )
-            with self.config.log_file.open("a") as f:
+            with self.config.log_file.open("a", encoding="utf-8") as f:
                 f.write(
                     f"  {r.status.value:<15} {r.name} "
                     f"({r.iterations} iter, {r.elapsed_minutes:.1f}m)\n"
