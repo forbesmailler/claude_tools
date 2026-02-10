@@ -1,16 +1,5 @@
 #!/usr/bin/env python3
-"""
-Iterative Claude Code task runner with git integration.
-
-Runs a series of coding tasks via Claude Code in print mode (-p), committing
-after each successful iteration, squashing per task, and retrying on rate limits.
-
-Usage:
-    python iterate.py                          # Run default tasks
-    python iterate.py --model opus             # Specify model
-    python iterate.py -p "Fix all TODOs" -p "Add docstrings"  # Custom prompts
-    python iterate.py --max-iterations 10      # Override iteration cap
-"""
+"""Iterative Claude Code task runner with git integration."""
 
 from __future__ import annotations
 
@@ -39,10 +28,9 @@ _current_proc: subprocess.Popen | None = None
 def _keypress_monitor():
     global _interrupted
     while not _interrupted:
-        if msvcrt.kbhit():
-            if msvcrt.getwch() == "q":
-                _interrupted = True
-                return
+        if msvcrt.kbhit() and msvcrt.getwch() == "q":
+            _interrupted = True
+            return
         time.sleep(_cfg["poll_interval"])
 
 
@@ -195,7 +183,6 @@ _SKIP_DIRS = {
 
 
 def _has_recent_edit(since: float) -> bool:
-    """Check if any file in the working tree was modified after `since` (wall clock)."""
     for root, dirs, files in os.walk("."):
         dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
         for f in files:
@@ -208,12 +195,6 @@ def _has_recent_edit(since: float) -> bool:
 
 
 def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
-    """Run a subprocess while remaining responsive to the quit key.
-
-    Redirects stdout/stderr to temp files instead of pipes to avoid
-    freezing when child processes inherit pipe handles.  Kills the
-    process if output or file edits stall for stall_timeout_seconds.
-    """
     global _current_proc
     f_out = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
     f_err = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
@@ -282,25 +263,18 @@ class ClaudeRunner:
 
     def _parse_rate_limit_wait(self, text: str) -> int:
         padding = self.config.rate_limit_padding_seconds
-        # Match "4:00 PM", "4:00PM", "4pm", "4 PM"
-        match = re.search(r"(\d{1,2})(?::(\d{2}))?\s*([APap][Mm])", text)
-        if match:
+        if match := re.search(r"(\d{1,2})(?::(\d{2}))?\s*([APap][Mm])", text):
             try:
-                hour_str = match.group(1)
-                min_str = match.group(2) or "00"
-                ampm = match.group(3).upper()
-                time_str = f"{hour_str}:{min_str} {ampm}"
+                time_str = f"{match.group(1)}:{match.group(2) or '00'} {match.group(3).upper()}"
                 now = datetime.now()
                 reset_time = datetime.strptime(time_str, "%I:%M %p").replace(
                     year=now.year, month=now.month, day=now.day
                 )
-                wait = int((reset_time - now).total_seconds()) + padding
-                if wait > 0:
+                if (wait := int((reset_time - now).total_seconds()) + padding) > 0:
                     return wait
             except ValueError:
                 pass
-        match = re.search(r"(\d+)\s*minutes?", text)
-        if match:
+        if match := re.search(r"(\d+)\s*minutes?", text):
             return int(match.group(1)) * 60 + padding
         return self.config.default_wait_seconds
 
@@ -404,10 +378,11 @@ class TaskOrchestrator:
             iterations = iteration
             self._output(f"\n  --- {task.name} - iteration {iteration} ---")
 
-            if restart:
-                base_prompt = f"Read CLAUDE.md, then {task.prompt}"
-            else:
-                base_prompt = self.config.continuation_prompt
+            base_prompt = (
+                f"Read CLAUDE.md, then {task.prompt}"
+                if restart
+                else self.config.continuation_prompt
+            )
             result = self.runner.invoke(
                 f"{base_prompt} {self.config.suffix}",
                 continue_session=not restart,
@@ -417,22 +392,19 @@ class TaskOrchestrator:
 
             if not result.succeeded:
                 self._output(f"  FAIL: Claude exited with code {result.exit_code}")
-                commit_changes(f"{task.name} - iteration {iteration}")
                 restart = True
-                continue
-
-            restart = False
-
-            if result.signalled_no_changes:
-                elapsed = (time.monotonic() - task_start) / 60
-                self._output(
-                    f"  Converged after {iteration} iteration(s) ({elapsed:.1f}m)"
-                )
-                status = TaskStatus.CONVERGED
-                commit_changes(f"{task.name} - iteration {iteration}")
-                break
+            else:
+                restart = False
+                if result.signalled_no_changes:
+                    elapsed = (time.monotonic() - task_start) / 60
+                    self._output(
+                        f"  Converged after {iteration} iteration(s) ({elapsed:.1f}m)"
+                    )
+                    status = TaskStatus.CONVERGED
 
             commit_changes(f"{task.name} - iteration {iteration}")
+            if status == TaskStatus.CONVERGED:
+                break
 
         if status == TaskStatus.MAX_ITERATIONS:
             self._output(
@@ -455,23 +427,17 @@ class TaskOrchestrator:
         self._output(f"  Summary ({elapsed_minutes:.1f}m)")
         self._output(f"{'=' * 60}")
         for r in self.results:
+            tail = f"{r.name} ({r.iterations} iter, {r.elapsed_minutes:.1f}m)"
             c = colors.get(r.status, "")
-            print(
-                f"  {c}{r.status.value:<15}{reset} {r.name} "
-                f"({r.iterations} iter, {r.elapsed_minutes:.1f}m)"
-            )
+            print(f"  {c}{r.status.value:<15}{reset} {tail}")
             with self.config.log_file.open("a", encoding="utf-8") as f:
-                f.write(
-                    f"  {r.status.value:<15} {r.name} "
-                    f"({r.iterations} iter, {r.elapsed_minutes:.1f}m)\n"
-                )
+                f.write(f"  {r.status.value:<15} {tail}\n")
         self._output("")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Iterative Claude Code task runner with git integration.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--model", "-m", help="Claude model to use (e.g. opus, sonnet)")
     parser.add_argument(

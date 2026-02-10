@@ -28,19 +28,14 @@ def write_file(path, content):
 
 
 def mamba_run(command):
-    """Run a command inside an activated miniforge shell."""
-    full = f'call "{MAMBA_ACTIVATE}" && {command}'
-    subprocess.run(full, shell=True, check=True)
+    subprocess.run(f'call "{MAMBA_ACTIVATE}" && {command}', shell=True, check=True)
 
 
 def create_files(project_dir, name):
-    """Create all project files."""
-    # Directory structure
     os.makedirs(os.path.join(project_dir, name))
     os.makedirs(os.path.join(project_dir, "tests"))
     os.makedirs(os.path.join(project_dir, ".claude"))
 
-    # Empty __init__.py files
     for d in [name, "tests"]:
         write_file(os.path.join(project_dir, d, "__init__.py"), "")
 
@@ -86,14 +81,18 @@ def all(c):
 ''',
     )
 
+    dev_section = (
+        "## Development\n\n```bash\n"
+        "invoke format   # ruff format + check\n"
+        "invoke test     # pytest with coverage\n"
+        "invoke all      # both\n```\n"
+    )
+
     write_file(
         os.path.join(project_dir, "README.md"),
         f"# {name}\n\n## Setup\n\n```bash\n"
         f"mamba env create -f environment.yaml\nmamba activate {name}\n```\n\n"
-        f"## Development\n\n```bash\n"
-        f"invoke format   # ruff format + check\n"
-        f"invoke test     # pytest with coverage\n"
-        f"invoke all      # both\n```\n",
+        + dev_section,
     )
 
     write_file(
@@ -103,11 +102,7 @@ def all(c):
         f"when working with code in this repository.\n\n"
         f"## Project Overview\n\n{name}\n\n"
         f"## Dependencies\n\n"
-        f"Managed via `environment.yaml` (mamba/conda).\n\n"
-        f"## Development\n\n```bash\n"
-        f"invoke format   # ruff format + check\n"
-        f"invoke test     # pytest with coverage\n"
-        f"invoke all      # both\n```\n",
+        f"Managed via `environment.yaml` (mamba/conda).\n\n" + dev_section,
     )
 
     write_file(
@@ -117,16 +112,16 @@ def all(c):
 
 
 def init_git(project_dir):
-    subprocess.run(["git", "init"], cwd=project_dir, check=True)
-    subprocess.run(["git", "add", "."], cwd=project_dir, check=True)
-    subprocess.run(
-        ["git", "commit", "-m", "Initial commit"], cwd=project_dir, check=True
-    )
+    for cmd in [
+        ["git", "init"],
+        ["git", "add", "."],
+        ["git", "commit", "-m", "Initial commit"],
+    ]:
+        subprocess.run(cmd, cwd=project_dir, check=True)
 
 
 def create_mamba_env(project_dir, name):
-    deps_str = " ".join(DEFAULT_DEPS)
-    mamba_run(f"mamba create -n {name} {deps_str} -y")
+    mamba_run(f"mamba create -n {name} {' '.join(DEFAULT_DEPS)} -y")
     env_file = os.path.join(project_dir, "environment.yaml")
     mamba_run(f'mamba env export -n {name} --no-builds > "{env_file}"')
 
