@@ -206,7 +206,8 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
         last_size = 0
         last_activity = time.monotonic()
         last_edit_wall = time.time()
-        next_edit_check = last_activity + 5
+        edit_check_interval = _cfg["edit_check_interval"]
+        next_edit_check = last_activity + edit_check_interval
         stall_timeout = _cfg["stall_timeout_seconds"]
 
         while proc.poll() is None:
@@ -220,7 +221,7 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
                 last_activity = now
 
             if now >= next_edit_check:
-                next_edit_check = now + 5
+                next_edit_check = now + edit_check_interval
                 if _has_recent_edit(last_edit_wall):
                     last_edit_wall = time.time()
                     last_activity = now

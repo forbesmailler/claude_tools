@@ -1,11 +1,15 @@
 from invoke import task
 
+from claude_tools.constants import load_config
+
+_line_length = load_config()["setup"]["line_length"]
+
 
 @task
 def format(c):
     """Format code with ruff."""
-    c.run("ruff format --line-length 88 .")
-    c.run("ruff check --line-length 88 --fix --unsafe-fixes .")
+    c.run(f"ruff format --line-length {_line_length} .")
+    c.run(f"ruff check --line-length {_line_length} --fix --unsafe-fixes .")
 
 
 @task

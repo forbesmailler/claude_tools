@@ -24,6 +24,7 @@ iterate:
   default_wait_seconds: 300
   rate_limit_padding_seconds: 60
   poll_interval: 0.5
+  edit_check_interval: 5
   stall_timeout_seconds: 900
   log_file: "logs/iterate_log.md"
   suffix: >-
