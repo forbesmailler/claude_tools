@@ -196,7 +196,7 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
     global _current_proc
     f_out = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
     f_err = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
-    proc = subprocess.Popen(args, stdout=f_out, stderr=f_err)
+    proc = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=f_out, stderr=f_err)
     _current_proc = proc
 
     last_size = 0
