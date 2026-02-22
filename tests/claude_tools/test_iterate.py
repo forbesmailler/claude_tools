@@ -223,6 +223,9 @@ class TestClaudeRunnerBaseArgs:
             "claude",
             "-p",
             "--dangerously-skip-permissions",
+            "--output-format",
+            "stream-json",
+            "--verbose",
         ]
 
     def test_base_args_with_model(self):
@@ -235,6 +238,9 @@ class TestClaudeRunnerBaseArgs:
             "--dangerously-skip-permissions",
             "--model",
             "opus",
+            "--output-format",
+            "stream-json",
+            "--verbose",
         ]
 
 
@@ -318,8 +324,9 @@ class TestParseRateLimitWait:
 class TestClaudeRunnerInvoke:
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.run_subprocess")
-    def test_invoke_success_plain_text(self, mock_run, mock_interrupt):
-        mock_run.return_value = subprocess.CompletedProcess([], 0, "done", "")
+    def test_invoke_extracts_result_event(self, mock_run, mock_interrupt):
+        stdout = '{"result": "done", "session_id": "s1"}\n'
+        mock_run.return_value = subprocess.CompletedProcess([], 0, stdout, "")
         runner = ClaudeRunner(RunConfig())
         result = runner.invoke("do stuff")
         assert result.output == "done"
@@ -327,18 +334,20 @@ class TestClaudeRunnerInvoke:
 
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.run_subprocess")
-    def test_invoke_non_json_output(self, mock_run, mock_interrupt):
-        mock_run.return_value = subprocess.CompletedProcess(
-            [], 0, "plain text output", ""
-        )
+    def test_invoke_accumulates_text_deltas(self, mock_run, mock_interrupt):
+        lines = [
+            '{"type":"stream_event","event":{"delta":{"type":"text_delta","text":"hel"}}}',
+            '{"type":"stream_event","event":{"delta":{"type":"text_delta","text":"lo"}}}',
+        ]
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "\n".join(lines), "")
         runner = ClaudeRunner(RunConfig())
         result = runner.invoke("test")
-        assert result.output == "plain text output"
+        assert result.output == "hello"
         assert result.exit_code == 0
 
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.run_subprocess")
-    def test_invoke_non_json_with_stderr(self, mock_run, mock_interrupt):
+    def test_invoke_falls_back_to_stderr(self, mock_run, mock_interrupt):
         mock_run.return_value = subprocess.CompletedProcess([], 1, "", "error happened")
         runner = ClaudeRunner(RunConfig())
         result = runner.invoke("test")
@@ -348,7 +357,9 @@ class TestClaudeRunnerInvoke:
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.run_subprocess")
     def test_invoke_continue_session(self, mock_run, mock_interrupt):
-        mock_run.return_value = subprocess.CompletedProcess([], 0, "ok", "")
+        mock_run.return_value = subprocess.CompletedProcess(
+            [], 0, '{"result": "ok"}\n', ""
+        )
         runner = ClaudeRunner(RunConfig())
         runner.invoke("continue", continue_session=True)
         args = mock_run.call_args[0][0]
@@ -361,7 +372,7 @@ class TestClaudeRunnerInvoke:
         rate_limit_result = subprocess.CompletedProcess(
             [], 1, "", "you've hit your limit. Wait 1 minute"
         )
-        success_result = subprocess.CompletedProcess([], 0, "ok", "")
+        success_result = subprocess.CompletedProcess([], 0, '{"result": "ok"}\n', "")
         mock_run.side_effect = [rate_limit_result, success_result]
 
         runner = ClaudeRunner(RunConfig())
@@ -845,10 +856,8 @@ class TestRunSubprocess:
         mock_tmpfile.return_value = f_err
         f_err.write("hello stderr")
 
-        mock_stdout = MagicMock()
-        mock_stdout.__iter__ = MagicMock(return_value=iter(["hello stdout\n"]))
         mock_proc = MagicMock()
-        mock_proc.stdout = mock_stdout
+        mock_proc.stdout = StringIO("hello stdout\n")
         mock_proc.poll.return_value = 0
         mock_proc.returncode = 0
         mock_popen.return_value = mock_proc
@@ -866,10 +875,8 @@ class TestRunSubprocess:
         self, mock_tmpfile, mock_popen, mock_sleep, mock_interrupt
     ):
         mock_tmpfile.return_value = StringIO()
-        mock_stdout = MagicMock()
-        mock_stdout.__iter__ = MagicMock(return_value=iter([]))
         mock_proc = MagicMock()
-        mock_proc.stdout = mock_stdout
+        mock_proc.stdout = StringIO("")
         mock_proc.poll.side_effect = [None, None, 0]
         mock_proc.returncode = 0
         mock_popen.return_value = mock_proc
@@ -889,10 +896,8 @@ class TestRunSubprocess:
         mock_tmpfile.return_value = f_err
         f_err.write("fail")
 
-        mock_stdout = MagicMock()
-        mock_stdout.__iter__ = MagicMock(return_value=iter([]))
         mock_proc = MagicMock()
-        mock_proc.stdout = mock_stdout
+        mock_proc.stdout = StringIO("")
         mock_proc.poll.return_value = 1
         mock_proc.returncode = 1
         mock_popen.return_value = mock_proc
@@ -1004,11 +1009,9 @@ class TestKeypressMonitor:
 
 
 class TestRunSubprocessStall:
-    def _make_mock_proc(self, poll_returns, returncode, stdout_lines=None):
-        mock_stdout = MagicMock()
-        mock_stdout.__iter__ = MagicMock(return_value=iter(stdout_lines or []))
+    def _make_mock_proc(self, poll_returns, returncode, stdout_text=""):
         mock_proc = MagicMock()
-        mock_proc.stdout = mock_stdout
+        mock_proc.stdout = StringIO(stdout_text)
         if isinstance(poll_returns, list):
             mock_proc.poll.side_effect = poll_returns
         else:
@@ -1052,7 +1055,7 @@ class TestRunSubprocessStall:
         f_err.close = MagicMock()
 
         mock_popen.return_value = self._make_mock_proc(
-            [None, 0], 0, stdout_lines=["output\n"]
+            [None, 0], 0, stdout_text="output\n"
         )
 
         mono = iter([0, 0, 1, 1, 1])

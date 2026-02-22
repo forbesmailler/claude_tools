@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import msvcrt
 import os
 import re
@@ -226,10 +227,19 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
         _current_proc = proc
 
         def _read_stdout():
-            for line in proc.stdout:
-                print(line, end="", flush=True)
+            while True:
+                line = proc.stdout.readline()
+                if not line:
+                    break
                 with stdout_lock:
                     stdout_chunks.append(line)
+                try:
+                    event = json.loads(line)
+                    delta = (event.get("event") or {}).get("delta") or {}
+                    if delta.get("type") == "text_delta":
+                        print(delta["text"], end="", flush=True)
+                except (json.JSONDecodeError, TypeError, KeyError):
+                    pass
 
         reader = threading.Thread(target=_read_stdout, daemon=True)
         reader.start()
@@ -271,6 +281,7 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
         check_interrupt()
         _current_proc = None
         reader.join(timeout=5)
+        print(flush=True)
 
         stdout = "".join(stdout_chunks)
         f_err.seek(0)
@@ -290,6 +301,9 @@ class ClaudeRunner:
             "-p",
             "--dangerously-skip-permissions",
             *(["--model", self.config.model] if self.config.model else []),
+            "--output-format",
+            "stream-json",
+            "--verbose",
         ]
 
     def _parse_rate_limit_wait(self, text: str) -> int:
@@ -316,6 +330,21 @@ class ClaudeRunner:
 
     def _looks_like_rate_limit(self, text: str) -> bool:
         return bool(self._RATE_LIMIT_RE.search(text))
+
+    @staticmethod
+    def _extract_stream_result(stdout: str) -> str:
+        text_parts: list[str] = []
+        for line in stdout.splitlines():
+            try:
+                event = json.loads(line)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if "result" in event:
+                return event["result"]
+            delta = (event.get("event") or {}).get("delta") or {}
+            if delta.get("type") == "text_delta":
+                text_parts.append(delta["text"])
+        return "".join(text_parts)
 
     def invoke(self, prompt: str, continue_session: bool = False) -> ClaudeResult:
         args = self._base_args()
@@ -344,8 +373,9 @@ class ClaudeRunner:
                 print("  Resuming...", flush=True)
                 continue
 
+            output = self._extract_stream_result(result.stdout)
             return ClaudeResult(
-                output=result.stdout or result.stderr, exit_code=result.returncode
+                output=output or result.stderr, exit_code=result.returncode
             )
 
 
