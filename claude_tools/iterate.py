@@ -162,6 +162,13 @@ def commit_changes(message: str) -> bool:
     return False
 
 
+def _diff_context(base_sha: str) -> str:
+    result = git("diff", "--stat", base_sha, "HEAD", check=False)
+    if result.returncode != 0 or not result.stdout.strip():
+        return ""
+    return result.stdout.strip()
+
+
 def squash_task_commits(base_sha: str, message: str) -> None:
     if git_head_sha() != base_sha:
         git("reset", "--soft", base_sha)
@@ -394,11 +401,16 @@ class TaskOrchestrator:
             self._output(f"\n  --- {task.name} - iteration {iteration} ---")
 
             for _attempt in range(2):
-                base_prompt = (
-                    f"Read CLAUDE.md, then {task.prompt}"
-                    if restart
-                    else self.config.continuation_prompt
-                )
+                if restart:
+                    diff = _diff_context(base_sha) if iteration > 1 else ""
+                    context = (
+                        f"\n\nFiles already changed in this task:\n{diff}"
+                        if diff
+                        else ""
+                    )
+                    base_prompt = f"Read CLAUDE.md, then {task.prompt}{context}"
+                else:
+                    base_prompt = self.config.continuation_prompt
                 result = self.runner.invoke(
                     f"{base_prompt} {self.config.suffix}",
                     continue_session=not restart,
