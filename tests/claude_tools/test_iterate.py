@@ -223,8 +223,6 @@ class TestClaudeRunnerBaseArgs:
             "claude",
             "-p",
             "--dangerously-skip-permissions",
-            "--output-format",
-            "json",
         ]
 
     def test_base_args_with_model(self):
@@ -237,8 +235,6 @@ class TestClaudeRunnerBaseArgs:
             "--dangerously-skip-permissions",
             "--model",
             "opus",
-            "--output-format",
-            "json",
         ]
 
 
@@ -322,27 +318,12 @@ class TestParseRateLimitWait:
 class TestClaudeRunnerInvoke:
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.run_subprocess")
-    def test_invoke_success_with_json(self, mock_run, mock_interrupt):
-        mock_run.return_value = subprocess.CompletedProcess(
-            [],
-            0,
-            '{"result": "done", "session_id": "sess-123"}',
-            "",
-        )
+    def test_invoke_success_plain_text(self, mock_run, mock_interrupt):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "done", "")
         runner = ClaudeRunner(RunConfig())
         result = runner.invoke("do stuff")
         assert result.output == "done"
         assert result.exit_code == 0
-
-    @patch("claude_tools.iterate.check_interrupt")
-    @patch("claude_tools.iterate.run_subprocess")
-    def test_invoke_success_no_session_id(self, mock_run, mock_interrupt):
-        mock_run.return_value = subprocess.CompletedProcess(
-            [], 0, '{"result": "ok"}', ""
-        )
-        runner = ClaudeRunner(RunConfig())
-        result = runner.invoke("test")
-        assert result.output == "ok"
 
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.run_subprocess")
@@ -367,9 +348,7 @@ class TestClaudeRunnerInvoke:
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.run_subprocess")
     def test_invoke_continue_session(self, mock_run, mock_interrupt):
-        mock_run.return_value = subprocess.CompletedProcess(
-            [], 0, '{"result": "ok"}', ""
-        )
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "ok", "")
         runner = ClaudeRunner(RunConfig())
         runner.invoke("continue", continue_session=True)
         args = mock_run.call_args[0][0]
@@ -382,7 +361,7 @@ class TestClaudeRunnerInvoke:
         rate_limit_result = subprocess.CompletedProcess(
             [], 1, "", "you've hit your limit. Wait 1 minute"
         )
-        success_result = subprocess.CompletedProcess([], 0, '{"result": "ok"}', "")
+        success_result = subprocess.CompletedProcess([], 0, "ok", "")
         mock_run.side_effect = [rate_limit_result, success_result]
 
         runner = ClaudeRunner(RunConfig())
@@ -432,6 +411,10 @@ class TestTaskOrchestrator:
         )
         return TaskOrchestrator(tasks, config)
 
+    @patch(
+        "claude_tools.iterate.subprocess.run",
+        return_value=subprocess.CompletedProcess([], 0, "", ""),
+    )
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.squash_task_commits")
     @patch("claude_tools.iterate.commit_changes", return_value=False)
@@ -444,6 +427,7 @@ class TestTaskOrchestrator:
         mock_commit,
         mock_squash,
         mock_interrupt,
+        mock_subproc_run,
         tmp_path,
     ):
         mock_invoke.return_value = ClaudeResult(output="NO_CHANGES", exit_code=0)
@@ -454,6 +438,10 @@ class TestTaskOrchestrator:
         assert results[0].status == TaskStatus.CONVERGED
         assert results[0].iterations == 1
 
+    @patch(
+        "claude_tools.iterate.subprocess.run",
+        return_value=subprocess.CompletedProcess([], 0, "", ""),
+    )
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.squash_task_commits")
     @patch("claude_tools.iterate.commit_changes", return_value=True)
@@ -466,6 +454,7 @@ class TestTaskOrchestrator:
         mock_commit,
         mock_squash,
         mock_interrupt,
+        mock_subproc_run,
         tmp_path,
     ):
         mock_invoke.return_value = ClaudeResult(output="error", exit_code=1)
@@ -476,6 +465,10 @@ class TestTaskOrchestrator:
         assert results[0].status == TaskStatus.MAX_ITERATIONS
         assert results[0].iterations == 2
 
+    @patch(
+        "claude_tools.iterate.subprocess.run",
+        return_value=subprocess.CompletedProcess([], 0, "", ""),
+    )
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.squash_task_commits")
     @patch("claude_tools.iterate.commit_changes", return_value=True)
@@ -488,6 +481,7 @@ class TestTaskOrchestrator:
         mock_commit,
         mock_squash,
         mock_interrupt,
+        mock_subproc_run,
         tmp_path,
     ):
         mock_invoke.return_value = ClaudeResult(output="changes made", exit_code=0)
@@ -500,6 +494,10 @@ class TestTaskOrchestrator:
         assert results[0].status == TaskStatus.MAX_ITERATIONS
         assert results[0].iterations == 3
 
+    @patch(
+        "claude_tools.iterate.subprocess.run",
+        return_value=subprocess.CompletedProcess([], 0, "", ""),
+    )
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.squash_task_commits")
     @patch("claude_tools.iterate.commit_changes", return_value=False)
@@ -512,6 +510,7 @@ class TestTaskOrchestrator:
         mock_commit,
         mock_squash,
         mock_interrupt,
+        mock_subproc_run,
         tmp_path,
     ):
         mock_invoke.return_value = ClaudeResult(output="NO_CHANGES", exit_code=0)
@@ -522,6 +521,10 @@ class TestTaskOrchestrator:
         assert len(results) == 2
         assert all(r.status == TaskStatus.CONVERGED for r in results)
 
+    @patch(
+        "claude_tools.iterate.subprocess.run",
+        return_value=subprocess.CompletedProcess([], 0, "", ""),
+    )
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.squash_task_commits")
     @patch("claude_tools.iterate.commit_changes", return_value=True)
@@ -534,17 +537,21 @@ class TestTaskOrchestrator:
         mock_commit,
         mock_squash,
         mock_interrupt,
+        mock_subproc_run,
         tmp_path,
     ):
         mock_invoke.return_value = ClaudeResult(output="NO_CHANGES", exit_code=0)
         orch = self._make_orchestrator([Task("T1", "Fix bugs")], tmp_path)
         orch.run_all()
 
-        # Index 0 is _format_pass(); index 1 is the first task iteration
-        first_task_call = mock_invoke.call_args_list[1]
+        first_task_call = mock_invoke.call_args_list[0]
         assert "Fix bugs" in first_task_call[0][0]
         assert first_task_call[1].get("continue_session", False) is False
 
+    @patch(
+        "claude_tools.iterate.subprocess.run",
+        return_value=subprocess.CompletedProcess([], 0, "", ""),
+    )
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.squash_task_commits")
     @patch("claude_tools.iterate.commit_changes", return_value=True)
@@ -557,14 +564,14 @@ class TestTaskOrchestrator:
         mock_commit,
         mock_squash,
         mock_interrupt,
+        mock_subproc_run,
         tmp_path,
     ):
         call_count = [0]
 
         def side_effect(prompt, continue_session=False):
             call_count[0] += 1
-            # First call is _format_pass; task calls start at call_count 2
-            if call_count[0] >= 3:
+            if call_count[0] >= 2:
                 return ClaudeResult(output="NO_CHANGES", exit_code=0)
             return ClaudeResult(output="changes", exit_code=0)
 
@@ -572,11 +579,14 @@ class TestTaskOrchestrator:
         orch = self._make_orchestrator([Task("T1", "Fix bugs")], tmp_path)
         orch.run_all()
 
-        # Index 0 is _format_pass(); index 2 is the second task iteration
-        third_call = mock_invoke.call_args_list[2]
-        assert "Keep going" in third_call[0][0]
-        assert third_call[1].get("continue_session") is True
+        second_call = mock_invoke.call_args_list[1]
+        assert "Keep going" in second_call[0][0]
+        assert second_call[1].get("continue_session") is True
 
+    @patch(
+        "claude_tools.iterate.subprocess.run",
+        return_value=subprocess.CompletedProcess([], 0, "", ""),
+    )
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.squash_task_commits")
     @patch("claude_tools.iterate.commit_changes", return_value=True)
@@ -589,19 +599,19 @@ class TestTaskOrchestrator:
         mock_commit,
         mock_squash,
         mock_interrupt,
+        mock_subproc_run,
         tmp_path,
     ):
         call_count = [0]
 
         def side_effect(prompt, continue_session=False):
             call_count[0] += 1
-            # Call 1: _format_pass
-            # Call 2: iteration 1 (fresh) -> success
-            # Call 3: iteration 2 (continue) -> prompt too long
-            # Call 4: iteration 2 retry (fresh) -> NO_CHANGES
-            if call_count[0] == 3:
+            # Call 1: iteration 1 (fresh) -> success
+            # Call 2: iteration 2 (continue) -> prompt too long
+            # Call 3: iteration 2 retry (fresh) -> NO_CHANGES
+            if call_count[0] == 2:
                 return ClaudeResult(output="Prompt is too long", exit_code=1)
-            if call_count[0] == 4:
+            if call_count[0] == 3:
                 return ClaudeResult(output="NO_CHANGES", exit_code=0)
             return ClaudeResult(output="changes", exit_code=0)
 
@@ -613,11 +623,14 @@ class TestTaskOrchestrator:
 
         assert results[0].status == TaskStatus.CONVERGED
         assert results[0].iterations == 2
-        # Retry call should be fresh (continue_session=False) with task prompt
-        retry_call = mock_invoke.call_args_list[3]
+        retry_call = mock_invoke.call_args_list[2]
         assert "Fix bugs" in retry_call[0][0]
         assert retry_call[1].get("continue_session") is False
 
+    @patch(
+        "claude_tools.iterate.subprocess.run",
+        return_value=subprocess.CompletedProcess([], 0, "", ""),
+    )
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.squash_task_commits")
     @patch("claude_tools.iterate.commit_changes", return_value=False)
@@ -630,6 +643,7 @@ class TestTaskOrchestrator:
         mock_commit,
         mock_squash,
         mock_interrupt,
+        mock_subproc_run,
         tmp_path,
     ):
         mock_invoke.return_value = ClaudeResult(output="NO_CHANGES", exit_code=0)
@@ -640,6 +654,10 @@ class TestTaskOrchestrator:
 
 
 class TestTaskOrchestratorOutput:
+    @patch(
+        "claude_tools.iterate.subprocess.run",
+        return_value=subprocess.CompletedProcess([], 0, "", ""),
+    )
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.squash_task_commits")
     @patch("claude_tools.iterate.commit_changes", return_value=False)
@@ -652,6 +670,7 @@ class TestTaskOrchestratorOutput:
         mock_commit,
         mock_squash,
         mock_interrupt,
+        mock_subproc_run,
         tmp_path,
     ):
         mock_invoke.return_value = ClaudeResult(output="NO_CHANGES", exit_code=0)
@@ -668,6 +687,10 @@ class TestTaskOrchestratorOutput:
 
 
 class TestPrintSummary:
+    @patch(
+        "claude_tools.iterate.subprocess.run",
+        return_value=subprocess.CompletedProcess([], 0, "", ""),
+    )
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.squash_task_commits")
     @patch("claude_tools.iterate.commit_changes", return_value=False)
@@ -680,6 +703,7 @@ class TestPrintSummary:
         mock_commit,
         mock_squash,
         mock_interrupt,
+        mock_subproc_run,
         tmp_path,
         capsys,
     ):
@@ -817,19 +841,20 @@ class TestRunSubprocess:
     def test_captures_stdout_and_stderr(
         self, mock_tmpfile, mock_popen, mock_sleep, mock_interrupt
     ):
-        f_out = StringIO()
         f_err = StringIO()
-        mock_tmpfile.side_effect = [f_out, f_err]
-        f_out.write("hello stdout")
+        mock_tmpfile.return_value = f_err
         f_err.write("hello stderr")
 
+        mock_stdout = MagicMock()
+        mock_stdout.__iter__ = MagicMock(return_value=iter(["hello stdout\n"]))
         mock_proc = MagicMock()
+        mock_proc.stdout = mock_stdout
         mock_proc.poll.return_value = 0
         mock_proc.returncode = 0
         mock_popen.return_value = mock_proc
 
         result = run_subprocess(["echo", "hi"])
-        assert result.stdout == "hello stdout"
+        assert result.stdout == "hello stdout\n"
         assert result.stderr == "hello stderr"
         assert result.returncode == 0
 
@@ -840,8 +865,11 @@ class TestRunSubprocess:
     def test_polls_until_complete(
         self, mock_tmpfile, mock_popen, mock_sleep, mock_interrupt
     ):
-        mock_tmpfile.side_effect = [StringIO(), StringIO()]
+        mock_tmpfile.return_value = StringIO()
+        mock_stdout = MagicMock()
+        mock_stdout.__iter__ = MagicMock(return_value=iter([]))
         mock_proc = MagicMock()
+        mock_proc.stdout = mock_stdout
         mock_proc.poll.side_effect = [None, None, 0]
         mock_proc.returncode = 0
         mock_popen.return_value = mock_proc
@@ -857,12 +885,14 @@ class TestRunSubprocess:
     def test_nonzero_exit_code(
         self, mock_tmpfile, mock_popen, mock_sleep, mock_interrupt
     ):
-        f_out = StringIO()
         f_err = StringIO()
-        mock_tmpfile.side_effect = [f_out, f_err]
+        mock_tmpfile.return_value = f_err
         f_err.write("fail")
 
+        mock_stdout = MagicMock()
+        mock_stdout.__iter__ = MagicMock(return_value=iter([]))
         mock_proc = MagicMock()
+        mock_proc.stdout = mock_stdout
         mock_proc.poll.return_value = 1
         mock_proc.returncode = 1
         mock_popen.return_value = mock_proc
@@ -974,6 +1004,18 @@ class TestKeypressMonitor:
 
 
 class TestRunSubprocessStall:
+    def _make_mock_proc(self, poll_returns, returncode, stdout_lines=None):
+        mock_stdout = MagicMock()
+        mock_stdout.__iter__ = MagicMock(return_value=iter(stdout_lines or []))
+        mock_proc = MagicMock()
+        mock_proc.stdout = mock_stdout
+        if isinstance(poll_returns, list):
+            mock_proc.poll.side_effect = poll_returns
+        else:
+            mock_proc.poll.return_value = poll_returns
+        mock_proc.returncode = returncode
+        return mock_proc
+
     @patch("claude_tools.iterate._has_recent_edit", return_value=False)
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.subprocess.Popen")
@@ -981,16 +1023,9 @@ class TestRunSubprocessStall:
     def test_kills_on_stall_timeout(
         self, mock_tmpfile, mock_popen, mock_interrupt, mock_recent
     ):
-        f_out = StringIO()
-        f_err = StringIO()
-        mock_tmpfile.side_effect = [f_out, f_err]
+        mock_tmpfile.return_value = StringIO()
+        mock_popen.return_value = self._make_mock_proc(None, -9)
 
-        mock_proc = MagicMock()
-        mock_proc.poll.return_value = None  # never finishes
-        mock_proc.returncode = -9
-        mock_popen.return_value = mock_proc
-
-        # Make time.monotonic advance past stall_timeout on each call
         mono_values = iter([0, 0, 0, 1000, 1000, 1000, 1000, 1000, 1000, 1000])
 
         with patch("claude_tools.iterate.time.monotonic", side_effect=mono_values):
@@ -998,8 +1033,8 @@ class TestRunSubprocessStall:
                 with patch("claude_tools.iterate.time.time", return_value=0):
                     result = run_subprocess(["stalling"])
 
-        mock_proc.kill.assert_called_once()
-        mock_proc.wait.assert_called_once()
+        mock_popen.return_value.kill.assert_called_once()
+        mock_popen.return_value.wait.assert_called_once()
         assert result.returncode == -9
 
     @patch("claude_tools.iterate._has_recent_edit", return_value=False)
@@ -1009,24 +1044,16 @@ class TestRunSubprocessStall:
     def test_stdout_growth_resets_activity(
         self, mock_tmpfile, mock_popen, mock_interrupt, mock_recent
     ):
-        f_out = MagicMock()
         f_err = MagicMock()
-        mock_tmpfile.side_effect = [f_out, f_err]
-
-        # f_out.tell() returns 10 in the loop, triggering size != last_size (0)
-        f_out.tell.return_value = 10
+        mock_tmpfile.return_value = f_err
         f_err.tell.return_value = 0
-        f_out.seek = MagicMock()
         f_err.seek = MagicMock()
-        f_out.read.return_value = "output"
         f_err.read.return_value = ""
-        f_out.close = MagicMock()
         f_err.close = MagicMock()
 
-        mock_proc = MagicMock()
-        mock_proc.poll.side_effect = [None, 0]
-        mock_proc.returncode = 0
-        mock_popen.return_value = mock_proc
+        mock_popen.return_value = self._make_mock_proc(
+            [None, 0], 0, stdout_lines=["output\n"]
+        )
 
         mono = iter([0, 0, 1, 1, 1])
         with patch("claude_tools.iterate.time.monotonic", side_effect=mono):
@@ -1035,7 +1062,7 @@ class TestRunSubprocessStall:
                     result = run_subprocess(["cmd"])
 
         assert result.returncode == 0
-        assert result.stdout == "output"
+        assert result.stdout == "output\n"
 
     @patch("claude_tools.iterate._has_recent_edit", return_value=True)
     @patch("claude_tools.iterate.check_interrupt")
@@ -1044,25 +1071,15 @@ class TestRunSubprocessStall:
     def test_recent_edit_resets_activity(
         self, mock_tmpfile, mock_popen, mock_interrupt, mock_recent
     ):
-        f_out = MagicMock()
         f_err = MagicMock()
-        mock_tmpfile.side_effect = [f_out, f_err]
-        f_out.tell.return_value = 0
+        mock_tmpfile.return_value = f_err
         f_err.tell.return_value = 0
-        f_out.seek = MagicMock()
         f_err.seek = MagicMock()
-        f_out.read.return_value = ""
         f_err.read.return_value = ""
-        f_out.close = MagicMock()
         f_err.close = MagicMock()
 
-        mock_proc = MagicMock()
-        mock_proc.poll.side_effect = [None, 0]
-        mock_proc.returncode = 0
-        mock_popen.return_value = mock_proc
+        mock_popen.return_value = self._make_mock_proc([None, 0], 0)
 
-        # monotonic calls: (1) last_activity=0, (2) next_edit_check=0+5=5,
-        # loop: (3) now=10 which is >=5, triggers edit check. Then proc exits.
         mono = iter([0, 10, 10])
         with patch("claude_tools.iterate.time.monotonic", side_effect=mono):
             with patch("claude_tools.iterate.time.sleep"):
@@ -1074,6 +1091,10 @@ class TestRunSubprocessStall:
 
 
 class TestTaskOrchestratorCooldown:
+    @patch(
+        "claude_tools.iterate.subprocess.run",
+        return_value=subprocess.CompletedProcess([], 0, "", ""),
+    )
     @patch("claude_tools.iterate.time.sleep")
     @patch("claude_tools.iterate.check_interrupt")
     @patch("claude_tools.iterate.squash_task_commits")
@@ -1088,13 +1109,14 @@ class TestTaskOrchestratorCooldown:
         mock_squash,
         mock_interrupt,
         mock_sleep,
+        mock_subproc_run,
         tmp_path,
     ):
         call_count = [0]
 
         def side_effect(prompt, continue_session=False):
             call_count[0] += 1
-            if call_count[0] >= 3:  # format + 2 task iterations
+            if call_count[0] >= 2:
                 return ClaudeResult(output="NO_CHANGES", exit_code=0)
             return ClaudeResult(output="changes", exit_code=0)
 
@@ -1107,7 +1129,7 @@ class TestTaskOrchestratorCooldown:
         orch = TaskOrchestrator([Task("T1", "prompt")], config)
         orch.run_all()
 
-        # Cooldown sleeps: iteration 2 and 3 each sleep 2 times (2 seconds)
+        # Cooldown sleeps: iteration 2 each sleep 2 times (2 seconds)
         sleep_calls = [c for c in mock_sleep.call_args_list if c[0] == (1,)]
         assert len(sleep_calls) >= 2
 

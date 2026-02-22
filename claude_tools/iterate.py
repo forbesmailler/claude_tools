@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import msvcrt
 import os
 import re
@@ -215,12 +214,25 @@ def _has_recent_edit(since: float) -> bool:
 
 def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
     global _current_proc
-    f_out = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
     f_err = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
+    stdout_chunks: list[str] = []
+    stdout_lock = threading.Lock()
+
     try:
-        proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=f_out, stderr=f_err)
+        proc = subprocess.Popen(
+            args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=f_err, text=True
+        )
         proc.stdin.close()
         _current_proc = proc
+
+        def _read_stdout():
+            for line in proc.stdout:
+                print(line, end="", flush=True)
+                with stdout_lock:
+                    stdout_chunks.append(line)
+
+        reader = threading.Thread(target=_read_stdout, daemon=True)
+        reader.start()
 
         last_size = 0
         last_activity = time.monotonic()
@@ -234,7 +246,9 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
             time.sleep(_cfg["poll_interval"])
             now = time.monotonic()
 
-            current_size = f_out.tell() + f_err.tell()
+            with stdout_lock:
+                current_size = sum(len(c) for c in stdout_chunks)
+            current_size += f_err.tell()
             if current_size != last_size:
                 last_size = current_size
                 last_activity = now
@@ -256,14 +270,13 @@ def run_subprocess(args: list[str]) -> subprocess.CompletedProcess:
 
         check_interrupt()
         _current_proc = None
+        reader.join(timeout=5)
 
-        f_out.seek(0)
+        stdout = "".join(stdout_chunks)
         f_err.seek(0)
-        stdout = f_out.read()
         stderr = f_err.read()
         return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
     finally:
-        f_out.close()
         f_err.close()
 
 
@@ -277,8 +290,6 @@ class ClaudeRunner:
             "-p",
             "--dangerously-skip-permissions",
             *(["--model", self.config.model] if self.config.model else []),
-            "--output-format",
-            "json",
         ]
 
     def _parse_rate_limit_wait(self, text: str) -> int:
@@ -333,13 +344,9 @@ class ClaudeRunner:
                 print("  Resuming...", flush=True)
                 continue
 
-            try:
-                data = json.loads(result.stdout)
-                output_text = data.get("result", result.stdout)
-            except (json.JSONDecodeError, TypeError):
-                output_text = result.stdout or result.stderr
-
-            return ClaudeResult(output=output_text, exit_code=result.returncode)
+            return ClaudeResult(
+                output=result.stdout or result.stderr, exit_code=result.returncode
+            )
 
 
 class TaskOrchestrator:
@@ -355,13 +362,20 @@ class TaskOrchestrator:
         with self.config.log_file.open("a", encoding="utf-8") as f:
             f.write(text + "\n")
 
+    def _log(self, text: str) -> None:
+        with self.config.log_file.open("a", encoding="utf-8") as f:
+            f.write(text + "\n")
+
     def _format_pass(self) -> None:
         self._output("  Running formatter...")
         check_interrupt()
-        result = self.runner.invoke("Run the code formatter.")
-        self._output(f"\n{result.output}\n")
-        if result.succeeded:
-            commit_changes("format")
+        result = subprocess.run(
+            ["invoke", "format"], capture_output=True, text=True, check=False
+        )
+        self._output(result.stdout.strip() if result.stdout else "")
+        if result.returncode != 0 and result.stderr:
+            self._output(result.stderr.strip())
+        commit_changes("format")
 
     def run_all(self) -> list[TaskResult]:
         self.config.log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -425,7 +439,7 @@ class TaskOrchestrator:
                     continue
                 break
 
-            self._output(f"\n{result.output}\n")
+            self._log(result.output)
 
             if not result.succeeded:
                 self._output(f"  FAIL: Claude exited with code {result.exit_code}")
