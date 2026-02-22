@@ -19,6 +19,9 @@ from enum import Enum
 from pathlib import Path
 
 import yaml
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 _CONFIG_PATH = Path(__file__).resolve().parent.parent / "iterate_config.yaml"
 with open(_CONFIG_PATH) as _f:
@@ -59,6 +62,7 @@ class TaskStatus(Enum):
 class Task:
     name: str
     prompt: str
+    model: str | None = None
 
 
 @dataclass
@@ -88,6 +92,7 @@ DEFAULT_TASKS = [
         "Look for: off-by-one errors, logic errors, edge cases (empty, None, zero, "
         "negative), race conditions, resource leaks, swallowed exceptions. "
         "Do not mask bugs with clamping or bounds checks.",
+        model="opus",
     ),
     Task(
         "Test coverage",
@@ -95,6 +100,7 @@ DEFAULT_TASKS = [
         "write focused unit tests in tests/foo/test_bar.py for foo/bar.py. "
         "Assert exact expected values, not just truthiness. "
         "Prioritize error paths, boundary values, and uncommon but valid inputs.",
+        model="sonnet",
     ),
     Task(
         "Conciseness",
@@ -102,6 +108,7 @@ DEFAULT_TASKS = [
         "performance. Remove dead code, unused imports, commented-out code, unnecessary "
         "comments. Inline trivial functions, use comprehensions and ternaries, merge "
         "duplicate logic, replace nesting with early returns.",
+        model="sonnet",
     ),
     Task(
         "Optimization",
@@ -109,6 +116,7 @@ DEFAULT_TASKS = [
         "repeated lookups that should be cached, unnecessary copies, allocations "
         "in tight loops, redundant recomputation. "
         "Do not sacrifice readability for marginal gains.",
+        model="opus",
     ),
     Task(
         "Config",
@@ -116,6 +124,7 @@ DEFAULT_TASKS = [
         "parameters in source files. Move each to a YAML config file. "
         "Reuse the existing config loader if one exists; otherwise create one. "
         "Replace every hardcoded value with a config read.",
+        model="sonnet",
     ),
     Task(
         "Markdown",
@@ -123,6 +132,7 @@ DEFAULT_TASKS = [
         "and incorrect command examples so they reflect the current code. "
         "Fix broken links, remove duplication between files. "
         "Keep wording concise. Do not add new sections.",
+        model="sonnet",
     ),
 ]
 
@@ -329,6 +339,7 @@ class TaskOrchestrator:
     def __init__(self, tasks: list[Task], config: RunConfig):
         self.tasks = tasks
         self.config = config
+        self.cli_model = config.model
         self.runner = ClaudeRunner(config)
         self.results: list[TaskResult] = []
 
@@ -362,6 +373,7 @@ class TaskOrchestrator:
         return self.results
 
     def _run_task(self, task: Task) -> TaskResult:
+        self.runner.config.model = self.cli_model or task.model
         self._output(f"\n{'=' * 60}")
         self._output(f"  Task: {task.name}")
         self._output(f"{'=' * 60}")

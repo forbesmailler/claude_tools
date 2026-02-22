@@ -20,6 +20,7 @@ dependencies:
   - pip=26.0.1=pyh145f28c_0
   - pluggy=1.6.0=pyhf9edf01_1
   - pygments=2.19.2=pyhd8ed1ab_0
+  - python-dotenv=1.1.0=pyhd8ed1ab_1
   - pyyaml=6.0.3=py314h2359020_0
   - pytest=9.0.2=pyhcf101f3_0
   - pytest-cov=7.0.0=pyhcf101f3_1
