@@ -1,7 +1,5 @@
 paths:
-  repos_dir: "C:\\Users\\forbe\\repos"
-  mamba_activate: "C:\\Users\\forbe\\miniforge3\\Scripts\\activate.bat"
-  mamba_bat: "C:\\Users\\forbe\\.local\\share\\mamba\\condabin\\mamba.bat"
+  repos_dir: ~/repos
 
 github:
   owner: "forbesmailler"

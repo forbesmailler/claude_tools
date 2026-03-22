@@ -1,5 +1,7 @@
 """Tests for claude_tools.setup_constants."""
 
+import os
+
 from claude_tools.setup_constants import (
     CLAUDE_SETTINGS,
     CONDA_CHANNEL,
@@ -9,8 +11,6 @@ from claude_tools.setup_constants import (
     GITIGNORE,
     LICENSE_TEMPLATE,
     LINE_LENGTH,
-    MAMBA_ACTIVATE,
-    MAMBA_BAT,
     REPO_VISIBILITY,
     REPOS_DIR,
     YEAR,
@@ -18,16 +18,8 @@ from claude_tools.setup_constants import (
 )
 
 
-def test_repos_dir_is_absolute():
-    assert REPOS_DIR == r"C:\Users\forbe\repos"
-
-
-def test_mamba_activate_path():
-    assert MAMBA_ACTIVATE == r"C:\Users\forbe\miniforge3\Scripts\activate.bat"
-
-
-def test_mamba_bat_path():
-    assert MAMBA_BAT == r"C:\Users\forbe\.local\share\mamba\condabin\mamba.bat"
+def test_repos_dir_is_expanded():
+    assert REPOS_DIR == os.path.expanduser("~/repos")
 
 
 def test_gh_owner():
@@ -104,9 +96,7 @@ def test_load_config_returns_expected_sections():
 
 def test_load_config_paths_match_module_constants():
     cfg = load_config()
-    assert cfg["paths"]["repos_dir"] == REPOS_DIR
-    assert cfg["paths"]["mamba_activate"] == MAMBA_ACTIVATE
-    assert cfg["paths"]["mamba_bat"] == MAMBA_BAT
+    assert os.path.expanduser(cfg["paths"]["repos_dir"]) == REPOS_DIR
 
 
 def test_load_config_github_owner_matches():

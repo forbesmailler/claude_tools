@@ -50,11 +50,10 @@ class TestWriteFile:
 
 class TestMambaRun:
     @patch("claude_tools.setup.subprocess.run")
-    @patch("claude_tools.setup.MAMBA_ACTIVATE", r"C:\activate.bat")
-    def test_calls_subprocess_with_activate(self, mock_run):
+    def test_calls_subprocess_with_command(self, mock_run):
         mamba_run("mamba create -n test python -y")
         mock_run.assert_called_once_with(
-            'call "C:\\activate.bat" && mamba create -n test python -y',
+            "mamba create -n test python -y",
             shell=True,
             check=True,
         )
@@ -63,7 +62,6 @@ class TestMambaRun:
         "claude_tools.setup.subprocess.run",
         side_effect=subprocess.CalledProcessError(1, "cmd"),
     )
-    @patch("claude_tools.setup.MAMBA_ACTIVATE", r"C:\activate.bat")
     def test_raises_on_failure(self, mock_run):
         with pytest.raises(subprocess.CalledProcessError):
             mamba_run("mamba fail")
@@ -193,7 +191,9 @@ class TestInitGit:
     def test_calls_git_init_add_commit(self, mock_run):
         init_git("/fake/dir")
         assert mock_run.call_count == 3
-        mock_run.assert_any_call(["git", "init"], cwd="/fake/dir", check=True)
+        mock_run.assert_any_call(
+            ["git", "init", "-b", "main"], cwd="/fake/dir", check=True
+        )
         mock_run.assert_any_call(["git", "add", "."], cwd="/fake/dir", check=True)
         mock_run.assert_any_call(
             ["git", "commit", "-m", "Initial commit"],
@@ -223,16 +223,10 @@ class TestCreateMambaEnv:
 class TestCreateGithubRepo:
     @patch("claude_tools.setup.subprocess.run")
     @patch("claude_tools.setup.REPO_VISIBILITY", "private")
-    @patch("claude_tools.setup.GH_ENV_NAME", "setup")
-    @patch("claude_tools.setup.MAMBA_BAT", r"C:\mamba.bat")
     def test_calls_gh_repo_create(self, mock_run):
         create_github_repo("/fake/dir", "myrepo")
         mock_run.assert_called_once_with(
             [
-                r"C:\mamba.bat",
-                "run",
-                "-n",
-                "setup",
                 "gh",
                 "repo",
                 "create",

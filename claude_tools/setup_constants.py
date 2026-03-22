@@ -15,9 +15,7 @@ def load_config(path: Path = _CONFIG_PATH) -> dict:
 
 _cfg = load_config()
 
-REPOS_DIR = _cfg["paths"]["repos_dir"]
-MAMBA_ACTIVATE = _cfg["paths"]["mamba_activate"]
-MAMBA_BAT = _cfg["paths"]["mamba_bat"]
+REPOS_DIR = str(Path(_cfg["paths"]["repos_dir"]).expanduser())
 GH_OWNER = _cfg["github"]["owner"]
 GH_ENV_NAME = _cfg["setup"]["gh_env_name"]
 REPO_VISIBILITY = _cfg["setup"]["repo_visibility"]

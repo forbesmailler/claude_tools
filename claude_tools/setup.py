@@ -8,13 +8,10 @@ from setup_constants import (
     CLAUDE_SETTINGS,
     CONDA_CHANNEL,
     DEFAULT_DEPS,
-    GH_ENV_NAME,
     GH_OWNER,
     GITIGNORE,
     LICENSE_TEMPLATE,
     LINE_LENGTH,
-    MAMBA_ACTIVATE,
-    MAMBA_BAT,
     REPO_VISIBILITY,
     REPOS_DIR,
     YEAR,
@@ -28,7 +25,7 @@ def write_file(path, content):
 
 
 def mamba_run(command):
-    subprocess.run(f'call "{MAMBA_ACTIVATE}" && {command}', shell=True, check=True)
+    subprocess.run(command, shell=True, check=True)
 
 
 def create_files(project_dir, name):
@@ -113,7 +110,7 @@ def all(c):
 
 def init_git(project_dir):
     for cmd in [
-        ["git", "init"],
+        ["git", "init", "-b", "main"],
         ["git", "add", "."],
         ["git", "commit", "-m", "Initial commit"],
     ]:
@@ -129,10 +126,6 @@ def create_mamba_env(project_dir, name):
 def create_github_repo(project_dir, name):
     subprocess.run(
         [
-            MAMBA_BAT,
-            "run",
-            "-n",
-            GH_ENV_NAME,
             "gh",
             "repo",
             "create",
